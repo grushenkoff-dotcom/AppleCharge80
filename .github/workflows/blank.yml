@@ -18,6 +18,51 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Create Info.plist
+        run: |
+          cat > AppleCharge80/Info.plist <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleDisplayName</key>
+              <string>AppleCharge80</string>
+
+              <key>CFBundleExecutable</key>
+              <string>$(EXECUTABLE_NAME)</string>
+
+              <key>CFBundleIdentifier</key>
+              <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+
+              <key>CFBundleInfoDictionaryVersion</key>
+              <string>6.0</string>
+
+              <key>CFBundleName</key>
+              <string>$(PRODUCT_NAME)</string>
+
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+
+              <key>CFBundleShortVersionString</key>
+              <string>1.0</string>
+
+              <key>CFBundleVersion</key>
+              <string>1</string>
+
+              <key>LSRequiresIPhoneOS</key>
+              <true/>
+
+              <key>UILaunchScreen</key>
+              <dict/>
+
+              <key>UISupportedInterfaceOrientations</key>
+              <array>
+                  <string>UIInterfaceOrientationPortrait</string>
+              </array>
+          </dict>
+          </plist>
+          EOF
+
       - name: Create project.yml
         run: |
           cat > project.yml <<'EOF'
@@ -36,23 +81,47 @@ jobs:
 
               sources:
                 - path: AppleCharge80
+                  excludes:
+                    - Info.plist
+
+              resources:
+                - path: AppleCharge80/Assets.xcassets
+
+              info:
+                path: AppleCharge80/Info.plist
 
               settings:
                 base:
                   PRODUCT_BUNDLE_IDENTIFIER: com.grushenkoff.AppleCharge80
                   PRODUCT_NAME: AppleCharge80
                   SWIFT_VERSION: "5.0"
-                  INFOPLIST_KEY_CFBundleDisplayName: AppleCharge80
-                  INFOPLIST_KEY_LSRequiresIPhoneOS: YES
-                  TARGETED_DEVICE_FAMILY: "1,2"
+                  TARGETED_DEVICE_FAMILY: "1"
+                  INFOPLIST_FILE: AppleCharge80/Info.plist
+                  MARKETING_VERSION: "1.0"
+                  CURRENT_PROJECT_VERSION: "1"
+
+                configs:
+                  Release:
+                    SWIFT_OPTIMIZATION_LEVEL: "-O"
+                  Debug:
+                    SWIFT_OPTIMIZATION_LEVEL: "-Onone"
           EOF
 
       - name: Generate Xcode project
-        run: xcodegen generate
-
-      - name: Select Xcode
         run: |
-          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+          xcodegen generate
+
+      - name: Verify generated project
+        run: |
+          echo "Xcode project:"
+          ls -la AppleCharge80.xcodeproj
+
+          echo
+          echo "Info.plist:"
+          plutil -lint AppleCharge80/Info.plist
+
+          echo
+          echo "Xcode:"
           xcodebuild -version
 
       - name: Build AppleCharge80
@@ -67,8 +136,15 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             clean build
 
+      - name: Package application
+        run: |
+          mkdir -p artifacts
+          cp -R \
+            build/Build/Products/Release-iphoneos/AppleCharge80.app \
+            artifacts/AppleCharge80.app
+
       - name: Upload AppleCharge80.app
         uses: actions/upload-artifact@v4
         with:
           name: AppleCharge80-app
-          path: build/Build/Products/Release-iphoneos/AppleCharge80.app
+          path: artifacts/AppleCharge80.app
