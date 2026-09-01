@@ -15,22 +15,60 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Show project structure
+      - name: Install XcodeGen
         run: |
-          echo "Repository:"
-          pwd
-          echo
-          echo "Files:"
-          find . -maxdepth 4 -type f | sort
+          brew install xcodegen
 
-      - name: Find Xcode project
+      - name: Create Xcode project configuration
         run: |
-          echo "Searching for Xcode project..."
-          find . -name "*.xcodeproj" -o -name "*.xcworkspace"
+          cat > project.yml <<'EOF'
+          name: AppleCharge80
+
+          options:
+            bundleIdPrefix: com.grushenkoff
+            deploymentTarget:
+              iOS: "17.0"
+
+          targets:
+            AppleCharge80:
+              type: application
+              platform: iOS
+              deploymentTarget: "17.0"
+
+              sources:
+                - path: AppleCharge80
+
+              settings:
+                base:
+                  PRODUCT_BUNDLE_IDENTIFIER: com.grushenkoff.AppleCharge80
+                  PRODUCT_NAME: AppleCharge80
+                  SWIFT_VERSION: "5.0"
+                  INFOPLIST_KEY_CFBundleDisplayName: AppleCharge80
+                  INFOPLIST_KEY_LSRequiresIPhoneOS: YES
+                  TARGETED_DEVICE_FAMILY: "1,2"
+
+              settings:
+                base:
+                  PRODUCT_BUNDLE_IDENTIFIER: com.grushenkoff.AppleCharge80
+                  PRODUCT_NAME: AppleCharge80
+                  SWIFT_VERSION: "5.0"
+                  INFOPLIST_KEY_CFBundleDisplayName: AppleCharge80
+                  INFOPLIST_KEY_LSRequiresIPhoneOS: YES
+                  TARGETED_DEVICE_FAMILY: "1,2"
+          EOF
+
+      - name: Generate Xcode project
+        run: |
+          xcodegen generate
+
+      - name: Show generated project
+        run: |
+          echo "Generated files:"
+          find . -maxdepth 3 -type f | sort
 
       - name: Select Xcode
         run: |
-          sudo xcode-select -s /Applications/Xcode.app
+          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
           xcodebuild -version
 
       - name: Build AppleCharge80
@@ -45,13 +83,8 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             clean build
 
-      - name: Package build
-        run: |
-          mkdir -p artifacts
-          cp -R build/Build/Products/Release-iphoneos/AppleCharge80.app artifacts/
-
       - name: Upload AppleCharge80.app
         uses: actions/upload-artifact@v4
         with:
           name: AppleCharge80-app
-          path: artifacts/AppleCharge80.app
+          path: build/Build/Products/Release-iphoneos/AppleCharge80.app
