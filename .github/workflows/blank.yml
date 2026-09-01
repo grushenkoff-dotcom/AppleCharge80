@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build AppleCharge80
+    name: Build and Package AppleCharge80
     runs-on: macos-15
 
     steps:
@@ -101,50 +101,54 @@ jobs:
                   CURRENT_PROJECT_VERSION: "1"
 
                 configs:
-                  Release:
-                    SWIFT_OPTIMIZATION_LEVEL: "-O"
                   Debug:
                     SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+
+                  Release:
+                    SWIFT_OPTIMIZATION_LEVEL: "-O"
           EOF
 
       - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Select Xcode
         run: |
-          xcodegen generate
-
-      - name: Verify generated project
-        run: |
-          echo "Xcode project:"
-          ls -la AppleCharge80.xcodeproj
-
-          echo
-          echo "Info.plist:"
-          plutil -lint AppleCharge80/Info.plist
-
-          echo
-          echo "Xcode:"
+          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
           xcodebuild -version
 
-      - name: Build AppleCharge80
+      - name: Archive AppleCharge80
         run: |
           xcodebuild \
             -project AppleCharge80.xcodeproj \
             -scheme AppleCharge80 \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath build \
+            -archivePath build/AppleCharge80.xcarchive \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            clean build
+            archive
 
-      - name: Package application
+      - name: Create unsigned IPA
         run: |
-          mkdir -p artifacts
-          cp -R \
-            build/Build/Products/Release-iphoneos/AppleCharge80.app \
-            artifacts/AppleCharge80.app
+          mkdir -p ipa/Payload
 
-      - name: Upload AppleCharge80.app
+          cp -R \
+            build/AppleCharge80.xcarchive/Products/Applications/AppleCharge80.app \
+            ipa/Payload/AppleCharge80.app
+
+          cd ipa
+          zip -r ../AppleCharge80-unsigned.ipa Payload
+
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: AppleCharge80-app
-          path: artifacts/AppleCharge80.app
+          name: AppleCharge80-unsigned-IPA
+          path: AppleCharge80-unsigned.ipa
+          retention-days: 7
+
+      - name: Upload Xcode archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppleCharge80-xcarchive
+          path: build/AppleCharge80.xcarchive
+          retention-days: 7
