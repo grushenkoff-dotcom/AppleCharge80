@@ -100,117 +100,121 @@ private struct AppleBodyFill: View {
 
     var body: some View {
         GeometryReader { geo in
-            let top = geo.size.height * 0.241
-            let bottom = geo.size.height
-            let height = bottom - top
-            let bandHeight = height / CGFloat(colors.count)
-            let scaled = max(0, min(1, progress)) * Double(colors.count)
-            let completed = min(colors.count, Int(scaled.rounded(.down)))
-            let currentFraction = scaled - Double(completed)
-
-            ZStack(alignment: .topLeading) {
-                ForEach(0..<colors.count, id: \.self) { index in
-                    let amount: CGFloat =
-                        index < completed ? 1 :
-                        (index == completed ? CGFloat(currentFraction) : 0)
-
-                    if amount > 0 {
-                        let fillHeight = max(0.5, bandHeight * amount)
-                        let bottomY = bottom - CGFloat(index) * bandHeight
-                        let centerY = bottomY - fillHeight / 2
-
-                        let layerDepth = colors.count - index
-                        let movement = frozen
-                            ? 0
-                            : 1.0 / Double(max(layerDepth, 1))
-
-                        let wobbleX = sin(
-                            time * (0.72 + Double(index) * 0.035) +
-                            Double(index) * 1.71
-                        ) * geo.size.width * 0.010 * movement
-
-                        let wobbleY = cos(
-                            time * (0.61 + Double(index) * 0.027) +
-                            Double(index) * 2.13
-                        ) * bandHeight * 0.055 * movement
-
-                        Rectangle()
-                            .fill(
-                                sectorColor(
-                                    index: index,
-                                    time: time,
-                                    frozen: frozen
-                                )
-                            )
-                            .frame(
-                                width: geo.size.width,
-                                height: fillHeight
-                            )
-                            .position(
-                                x: geo.size.width / 2 + wobbleX,
-                                y: centerY + wobbleY
-                            )
-                            .clipShape(
-                                WaveFillShape(
-                                    amplitude: index == completed && !frozen
-                                        ? max(3, bandHeight * 0.11)
-                                        : 0,
-                                    phase: time * 0.70 + Double(index) * 1.7
-                                )
-                            )
-                    }
-                }
-            }
+            AppleBandStack(
+                progress: progress,
+                time: time,
+                frozen: frozen,
+                colors: colors,
+                size: geo.size
+            )
             .mask(AppleBodyShape())
         }
     }
+}
 
-    private func sectorColor(
-        index: Int,
-        time: TimeInterval,
-        frozen: Bool
-    ) -> Color {
-        guard frozen else {
-            return colors[index]
+private struct AppleBandStack: View {
+    let progress: Double
+    let time: TimeInterval
+    let frozen: Bool
+    let colors: [Color]
+    let size: CGSize
+
+    var body: some View {
+        let count = colors.count
+        let scaled = max(0.0, min(1.0, progress)) * Double(count)
+        let completed = min(count, Int(scaled.rounded(.down)))
+        let fraction = max(0.0, min(1.0, scaled - Double(completed)))
+        let top = size.height * 0.241
+        let bottom = size.height
+        let bandHeight = (bottom - top) / CGFloat(count)
+
+        ZStack(alignment: .topLeading) {
+            ForEach(0..<count, id: \.self) { index in
+                AppleBand(
+                    index: index,
+                    count: count,
+                    completed: completed,
+                    fraction: fraction,
+                    time: time,
+                    frozen: frozen,
+                    color: colors[index],
+                    width: size.width,
+                    bandHeight: bandHeight,
+                    bottom: bottom
+                )
+            }
         }
+    }
+}
 
-        // После роста листика движение прекращается,
-        // остаётся только очень медленное переливание оттенка.
+private struct AppleBand: View {
+    let index: Int
+    let count: Int
+    let completed: Int
+    let fraction: Double
+    let time: TimeInterval
+    let frozen: Bool
+    let color: Color
+    let width: CGFloat
+    let bandHeight: CGFloat
+    let bottom: CGFloat
+
+    var body: some View {
+        let amount = amountForBand()
+        let fillHeight = max(0.5, bandHeight * CGFloat(amount))
+        let bottomY = bottom - CGFloat(index) * bandHeight
+        let centerY = bottomY - fillHeight / 2.0
+        let depth = max(count - index, 1)
+        let movement = frozen ? 0.0 : 1.0 / Double(depth)
+        let x = wobbleX(movement)
+        let y = wobbleY(movement)
+        let amplitude = index == completed && !frozen ? max(3.0, bandHeight * 0.11) : 0.0
+
+        if amount > 0.0 {
+            Rectangle()
+                .fill(displayColor())
+                .frame(width: width, height: fillHeight)
+                .position(x: width / 2.0 + x, y: centerY + y)
+                .clipShape(WaveFillShape(amplitude: amplitude, phase: time * 0.70 + Double(index) * 1.7))
+        }
+    }
+
+    private func amountForBand() -> Double {
+        if index < completed { return 1.0 }
+        if index == completed { return fraction }
+        return 0.0
+    }
+
+    private func wobbleX(_ movement: Double) -> CGFloat {
+        CGFloat(sin(time * (0.72 + Double(index) * 0.035) + Double(index) * 1.71) * Double(width) * 0.010 * movement)
+    }
+
+    private func wobbleY(_ movement: Double) -> CGFloat {
+        CGFloat(cos(time * (0.61 + Double(index) * 0.027) + Double(index) * 2.13) * Double(bandHeight) * 0.055 * movement)
+    }
+
+    private func displayColor() -> Color {
+        guard frozen else { return color }
         let shimmer = 0.5 + 0.5 * sin(time * 0.20 + Double(index) * 0.73)
-
-        let base = colors[index]
-        let light = base.opacity(0.20 + shimmer * 0.12)
-
-        return base.mix(with: .white, by: 0.08 + shimmer * 0.10)
-            .opacity(0.88 + light.opacity * 0.12)
+        return color.mix(with: .white, by: 0.05 + shimmer * 0.10)
     }
 }
 
 private extension Color {
     func mix(with other: Color, by amount: Double) -> Color {
-        let t = max(0, min(1, amount))
-
+        let t = max(0.0, min(1.0, amount))
         #if os(iOS)
-        let ui1 = UIColor(self)
-        let ui2 = UIColor(other)
-
-        var r1: CGFloat = 0
-        var g1: CGFloat = 0
-        var b1: CGFloat = 0
-        var a1: CGFloat = 0
-        var r2: CGFloat = 0
-        var g2: CGFloat = 0
-        var b2: CGFloat = 0
-        var a2: CGFloat = 0
-
-        ui1.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
-        ui2.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
-
+        let a = UIColor(self)
+        let b = UIColor(other)
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+        guard a.getRed(&r1, green: &g1, blue: &b1, alpha: &a1),
+              b.getRed(&r2, green: &g2, blue: &b2, alpha: &a2) else { return self }
         return Color(
-            red: Double(r1 + (r2 - r1) * t),
-            green: Double(g1 + (g2 - g1) * t),
-            blue: Double(b1 + (b2 - b1) * t),
-            opacity: Double(a1 + (a2 - a1) * t)
+            red: Double(r1 + (r2 - r1) * CGFloat(t)),
+            green: Double(g1 + (g2 - g1) * CGFloat(t)),
+            blue: Double(b1 + (b2 - b1) * CGFloat(t)),
+            opacity: Double(a1 + (a2 - a1) * CGFloat(t))
         )
         #else
         return self
@@ -219,31 +223,24 @@ private extension Color {
 }
 
 private struct WaveFillShape: Shape {
-    var amplitude: CGFloat
-    var phase: Double
+    let amplitude: CGFloat
+    let phase: Double
 
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        let samples = 32
-
+        let samples = 24
         path.move(to: CGPoint(x: 0, y: 0))
-
         for i in 0...samples {
             let x = rect.width * CGFloat(i) / CGFloat(samples)
             let t = Double(i) / Double(samples)
-
-            let wave = amplitude == 0
-                ? 0
-                : sin(t * .pi * 2.0 * 1.25 + phase) * amplitude
-                + sin(t * .pi * 2.0 * 0.63 - phase * 0.57) * amplitude * 0.45
-
+            let wave = amplitude == 0.0 ? 0.0 :
+                sin(t * .pi * 2.0 * 1.25 + phase) * amplitude +
+                sin(t * .pi * 2.0 * 0.63 - phase * 0.57) * amplitude * 0.45
             path.addLine(to: CGPoint(x: x, y: wave))
         }
-
         path.addLine(to: CGPoint(x: rect.width, y: rect.height))
         path.addLine(to: CGPoint(x: 0, y: rect.height))
         path.closeSubpath()
-
         return path
     }
 }
@@ -258,8 +255,7 @@ private struct GrowingApplePlant: View {
     private var growth: Double {
         guard let startDate else { return 0 }
 
-        let elapsed = time + Date().timeIntervalSinceReferenceDate
-            - startDate.timeIntervalSinceReferenceDate
+        let elapsed = time - startDate.timeIntervalSinceReferenceDate
 
         let raw = max(0, min(1, elapsed / 5.8))
 
