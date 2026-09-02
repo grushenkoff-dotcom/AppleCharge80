@@ -1,444 +1,386 @@
 import SwiftUI
-import UIKit
-
-/// Полноэкранный слой анимации зарядки.
-/// Внешний ContentView больше не ограничивает этот View рамкой логотипа:
-/// благодаря этому поток частиц действительно идёт от нижнего края экрана.
 struct ChargingLogoView: View {
     let progress: Double
-    let outlineProgress: Double   // оставлен для совместимости с ContentView
+    let outlineProgress: Double
     let isCharging: Bool
-
-    @State private var logoOpacity: Double = 0
-
-    private let sectorColors: [Color] = [
-        Color(red: 0.05, green: 0.42, blue: 0.95),
-        Color(red: 0.39, green: 0.18, blue: 0.78),
-        Color(red: 0.82, green: 0.05, blue: 0.35),
-        Color(red: 0.98, green: 0.22, blue: 0.10),
-        Color(red: 1.00, green: 0.52, blue: 0.05),
-        Color(red: 1.00, green: 0.78, blue: 0.10)
-    ]
-
+    @State private var displayedProgress: Double = 0
+    @State private var plantProgress: Double = 0
+    @State private var isDischargingAnimation = false
+    @State private var randomOrder: [Int] = Array(0..<8)
+    @State private var disappearedSegments: Set<Int> = []
+    private let segmentCount = 8
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
-            let time = timeline.date.timeIntervalSinceReferenceDate
-
-            GeometryReader { geo in
-                let logoWidth = min(geo.size.width * 0.41, 180)
-                let logoHeight = logoWidth * 1000.0 / 814.0
-                let logoCenterX = geo.size.width / 2
-                let logoCenterY = geo.size.height * 0.29
-                let logoTop = logoCenterY - logoHeight / 2
-
-                ZStack {
-                    if isCharging && progress < 1.0 {
-                        FormationParticles(
-                            progress: progress,
-                            time: time,
-                            logoFrame: CGRect(
-                                x: logoCenterX - logoWidth / 2,
-                                y: logoTop,
-                                width: logoWidth,
-                                height: logoHeight
-                            ),
-                            colors: sectorColors
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: false)) { context in
+            let now = context.date
+            ZStack {
+                // MARK: - Main logo
+                AppleChargeLogo(
+                    progress: displayedProgress,
+                    outlineProgress: outlineProgress,
+                    disappearedSegments: disappearedSegments
+                )
+                .frame(width: 118, height: 118)
+                // MARK: - Growing leaf
+                LeafShape()
+                    .trim(from: 0, to: plantProgress)
+                    .stroke(
+                        Color(red: 0.20, green: 0.78, blue: 0.38),
+                        style: StrokeStyle(
+                            lineWidth: 5,
+                            lineCap: .round,
+                            lineJoin: .round
                         )
-                        .opacity(logoOpacity)
-                    }
-
-                    LogoArtwork(
-                        progress: progress,
-                        time: time,
-                        finished: progress >= 0.999,
-                        colors: sectorColors
                     )
-                    .frame(width: logoWidth, height: logoHeight)
-                    .position(x: logoCenterX, y: logoCenterY)
-                    .opacity(logoOpacity)
+                    .frame(width: 118, height: 118)
+                    .opacity(plantProgress > 0 ? 1 : 0)
+                    .animation(
+                        .easeInOut(duration: 0.08),
+                        value: plantProgress
+                    )
+            }
+            .onChange(of: isCharging) { _, charging in
+                if charging {
+                    startChargingAnimation()
+                } else {
+                    startDischargingAnimation()
                 }
             }
-            .ignoresSafeArea()
-            .onChange(of: isCharging) { _, charging in
-                withAnimation(.easeInOut(duration: charging ? 0.55 : 0.85)) {
-                    logoOpacity = charging ? 1 : 0
-                }
+            .onChange(of: progress) { _, newValue in
+                updateProgress(newValue)
             }
             .onAppear {
-                logoOpacity = isCharging ? 1 : 0
-            }
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-}
-
-private struct LogoArtwork: View {
-    let progress: Double
-    let time: TimeInterval
-    let finished: Bool
-    let colors: [Color]
-
-    var body: some View {
-        GeometryReader { geo in
-            let p = min(max(progress, 0), 1)
-            let bodyHeight = geo.size.height * 0.759
-            let bodyTop = geo.size.height * 0.241
-            let bandHeight = bodyHeight / CGFloat(colors.count)
-
-            ZStack {
-                SequentialBodyFill(
-                    progress: p,
-                    time: time,
-                    colors: colors
-                )
-
-                // Верхний лист появляется только в самом конце.
-                AppleLeafShape()
-                    .fill(
-                        leafColor(time: time, finished: finished)
-                    )
-                    .mask(
-                        Rectangle()
-                            .frame(
-                                width: geo.size.width,
-                                height: geo.size.height * leafReveal(p)
-                            )
-                            .offset(y: -geo.size.height * (1 - leafReveal(p)) * 0.15)
-                    )
-
-                // Никаких белых контуров/бликов.
-                Color.clear
-            }
-            .frame(width: geo.size.width, height: geo.size.height)
-            .clipped()
-            .overlay(alignment: .top) {
-                Color.clear
-                    .frame(height: bodyTop + bandHeight * 0)
+                displayedProgress = max(0, min(100, progress))
+                updatePlantProgress()
             }
         }
     }
-
-    private func leafReveal(_ p: Double) -> CGFloat {
-        CGFloat(smoothStep((p - 0.94) / 0.06))
+    // MARK: - Charging
+    private func startChargingAnimation() {
+        isDischargingAnimation = false
+        disappearedSegments.removeAll()
+        randomOrder = Array(0..<segmentCount).shuffled()
+        withAnimation(.easeOut(duration: 0.25)) {
+            displayedProgress = max(0, min(100, progress))
+        }
+        updatePlantProgress()
     }
-
-    private func leafColor(time: TimeInterval, finished: Bool) -> Color {
-        let base = Color(red: 1.00, green: 0.78, blue: 0.10)
-        guard finished else { return base }
-
-        // Очень слабое цветовое дыхание, без белого блика.
-        let s = 0.5 + 0.5 * sin(time * 0.20)
-        return base.mix(
-            with: Color(red: 1.00, green: 0.62, blue: 0.03),
-            by: 0.06 + s * 0.05
-        )
+    private func updateProgress(_ value: Double) {
+        guard !isDischargingAnimation else { return }
+        let newProgress = max(0, min(100, value))
+        withAnimation(.linear(duration: 0.12)) {
+            displayedProgress = newProgress
+        }
+        updatePlantProgress(for: newProgress)
     }
-}
-
-private struct SequentialBodyFill: View {
-    let progress: Double
-    let time: TimeInterval
-    let colors: [Color]
-
-    var body: some View {
-        GeometryReader { geo in
-            let bodyTop = geo.size.height * 0.241
-            let bodyBottom = geo.size.height
-            let bodyHeight = bodyBottom - bodyTop
-            let bandHeight = bodyHeight / CGFloat(colors.count)
-            let scaled = progress * Double(colors.count)
-            let completed = min(colors.count, Int(floor(scaled)))
-            let current = min(1, max(0, scaled - Double(completed)))
-
-            ZStack {
-                ForEach(0..<colors.count, id: \.self) { index in
-                    let amount: CGFloat = index < completed
-                        ? 1
-                        : (index == completed ? CGFloat(current) : 0)
-
-                    if amount > 0 {
-                        AnimatedSector(
-                            index: index,
-                            amount: amount,
-                            bandHeight: bandHeight,
-                            bodyBottom: bodyBottom,
-                            time: time,
-                            color: colors[index],
-                            isCurrent: index == completed && completed < colors.count,
-                            finished: progress >= 0.999
-                        )
+    // MARK: - Leaf
+    //
+    // Leaf appears ONLY after 88%.
+    // It grows during the remaining 12%:
+    //
+    // 88%  -> 0%
+    // 100% -> 100%
+    private func updatePlantProgress(for value: Double? = nil) {
+        let current = value ?? displayedProgress
+        guard current >= 88 else {
+            withAnimation(.easeOut(duration: 0.15)) {
+                plantProgress = 0
+            }
+            return
+        }
+        let normalized = (current - 88.0) / 12.0
+        let leaf = max(0, min(1, normalized))
+        withAnimation(.linear(duration: 0.08)) {
+            plantProgress = leaf
+        }
+    }
+    // MARK: - Discharging
+    private func startDischargingAnimation() {
+        guard !isDischargingAnimation else { return }
+        isDischargingAnimation = true
+        plantProgress = 0
+        randomOrder = Array(0..<segmentCount).shuffled()
+        disappearedSegments.removeAll()
+        // Reset the visible state first.
+        displayedProgress = max(0, min(100, progress))
+        // Segments disappear one by one in random order.
+        for (position, segment) in randomOrder.enumerated() {
+            let delay = Double(position) * 0.09
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard isDischargingAnimation else { return }
+                withAnimation(.easeOut(duration: 0.12)) {
+                    disappearedSegments.insert(segment)
+                }
+                if position == randomOrder.count - 1 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+                        if isDischargingAnimation {
+                            displayedProgress = 0
+                            isDischargingAnimation = false
+                        }
                     }
                 }
             }
-            .mask(AppleBodyShape())
         }
     }
 }
-
-private struct AnimatedSector: View {
-    let index: Int
-    let amount: CGFloat
-    let bandHeight: CGFloat
-    let bodyBottom: CGFloat
-    let time: TimeInterval
-    let color: Color
-    let isCurrent: Bool
-    let finished: Bool
-
+// MARK: - Apple Charge Logo
+private struct AppleChargeLogo: View {
+    let progress: Double
+    let outlineProgress: Double
+    let disappearedSegments: Set<Int>
+    private let segmentCount = 8
     var body: some View {
-        let fillHeight = max(0.5, bandHeight * amount)
-        let sectorBottom = bodyBottom - CGFloat(index) * bandHeight
-        let baseTop = sectorBottom - fillHeight
-
-        // Именно текущая граница получает заметное, но мягкое движение.
-        // Уже заполненные полосы почти не двигаются.
-        let motion = finished ? 0 : (isCurrent ? 1.0 : 0.16)
-        let waveAmplitude = bandHeight * 0.115 * motion
-        let phase = time * (1.05 + Double(index) * 0.035) + Double(index) * 1.37
-        let drift = sin(time * 0.72 + Double(index) * 1.91) * bandHeight * 0.045 * motion
-
-        WaveSectorShape(
-            top: baseTop + drift,
-            bottom: sectorBottom,
-            amplitude: waveAmplitude,
-            phase: phase
-        )
-        .fill(animatedColor)
-        .clipped()
+        GeometryReader { geometry in
+            let size = min(geometry.size.width, geometry.size.height)
+            let center = CGPoint(
+                x: geometry.size.width / 2,
+                y: geometry.size.height / 2
+            )
+            ZStack {
+                // MARK: Outline
+                Circle()
+                    .trim(from: 0, to: max(0, min(1, outlineProgress)))
+                    .stroke(
+                        Color.white.opacity(0.85),
+                        style: StrokeStyle(
+                            lineWidth: 1.5,
+                            lineCap: .round
+                        )
+                    )
+                    .frame(width: size * 0.72, height: size * 0.72)
+                    .rotationEffect(.degrees(-90))
+                // MARK: Segments
+                ForEach(0..<segmentCount, id: \.self) { index in
+                    let visible = isSegmentVisible(index)
+                    ChargeSegment(
+                        index: index,
+                        count: segmentCount,
+                        radius: size * 0.36,
+                        thickness: size * 0.115
+                    )
+                    .fill(
+                        Color(red: 0.25, green: 0.82, blue: 0.38)
+                    )
+                    .opacity(visible ? 1 : 0)
+                    .scaleEffect(visible ? 1 : 0.82)
+                    .animation(
+                        .easeOut(duration: 0.12),
+                        value: visible
+                    )
+                }
+                // MARK: Center lightning / charging mark
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: size * 0.27, weight: .bold))
+                    .foregroundStyle(.white)
+                    .opacity(progress > 0 ? 1 : 0)
+            }
+            .position(center)
+        }
     }
-
-    private var animatedColor: Color {
-        guard finished else { return color }
-
-        let s = 0.5 + 0.5 * sin(time * 0.18 + Double(index) * 0.71)
-        let neighbour = Color(
-            hue: min(1, 0.58 + Double(index) * 0.035),
-            saturation: 0.92,
-            brightness: 0.96
-        )
-        return color.mix(with: neighbour, by: 0.025 + s * 0.025)
+    private func isSegmentVisible(_ index: Int) -> Bool {
+        if disappearedSegments.contains(index) {
+            return false
+        }
+        let fraction = max(0, min(1, progress / 100.0))
+        let visibleCount = Int(ceil(fraction * Double(segmentCount)))
+        return index < visibleCount
     }
 }
-
-private struct WaveSectorShape: Shape {
-    let top: CGFloat
-    let bottom: CGFloat
-    let amplitude: CGFloat
-    let phase: Double
-
+// MARK: - Charge Segment
+private struct ChargeSegment: Shape {
+    let index: Int
+    let count: Int
+    let radius: CGFloat
+    let thickness: CGFloat
     func path(in rect: CGRect) -> Path {
+        let center = CGPoint(
+            x: rect.midX,
+            y: rect.midY
+        )
+        let outerRadius = radius
+        let innerRadius = radius - thickness
+        let gap = CGFloat.pi / 180.0 * 4.0
+        let segmentAngle = 2.0 * CGFloat.pi / CGFloat(count)
+        let startAngle =
+            -CGFloat.pi / 2.0
+            + CGFloat(index) * segmentAngle
+            + gap / 2.0
+        let endAngle =
+            -CGFloat.pi / 2.0
+            + CGFloat(index + 1) * segmentAngle
+            - gap / 2.0
         var path = Path()
-        let samples = 28
-
-        func wave(_ x: CGFloat) -> CGFloat {
-            guard amplitude > 0 else { return 0 }
-            let t = Double(x / max(rect.width, 1))
-            return CGFloat(
-                sin(t * .pi * 2.0 * 1.15 + phase) * Double(amplitude)
-                + sin(t * .pi * 2.0 * 0.52 - phase * 0.61) * Double(amplitude * 0.42)
-            )
-        }
-
-        path.move(to: CGPoint(x: 0, y: top + wave(0)))
-
-        for i in 1...samples {
-            let x = rect.width * CGFloat(i) / CGFloat(samples)
-            path.addLine(to: CGPoint(x: x, y: top + wave(x)))
-        }
-
-        path.addLine(to: CGPoint(x: rect.maxX, y: bottom + 2))
-        path.addLine(to: CGPoint(x: 0, y: bottom + 2))
+        path.addArc(
+            center: center,
+            radius: outerRadius,
+            startAngle: Angle(radians: Double(startAngle)),
+            endAngle: Angle(radians: Double(endAngle)),
+            clockwise: false
+        )
+        path.addArc(
+            center: center,
+            radius: innerRadius,
+            startAngle: Angle(radians: Double(endAngle)),
+            endAngle: Angle(radians: Double(startAngle)),
+            clockwise: true
+        )
         path.closeSubpath()
         return path
     }
 }
-
-private struct FormationParticles: View {
-    let progress: Double
-    let time: TimeInterval
-    let logoFrame: CGRect
-    let colors: [Color]
-
-    private let particles = Particle.all
-
-    var body: some View {
-        Canvas { context, size in
-            let p = min(max(progress, 0), 1)
-            let streamFade = 1 - smoothStep((p - 0.94) / 0.06)
-            guard streamFade > 0 else { return }
-
-            let sectorCount = colors.count
-            let scaled = p * Double(sectorCount)
-            let currentSector = min(sectorCount - 1, Int(floor(scaled)))
-            let sectorFraction = min(1, max(0, scaled - Double(currentSector)))
-            let bandHeight = (logoFrame.height * 0.759) / CGFloat(sectorCount)
-            let bodyBottom = logoFrame.maxY
-            let targetBottom = bodyBottom - CGFloat(currentSector) * bandHeight
-            let targetBaseY = targetBottom - sectorFraction * bandHeight * 0.78
-
-            for particle in particles {
-                let cycle = 1.65 + particle.duration
-                let phase = (time / cycle + particle.offset).truncatingRemainder(dividingBy: 1)
-                let travel = smoothStep(phase)
-
-                let startX = size.width * 0.5 + particle.startOffset
-                let targetSpread = logoFrame.width * (0.18 - CGFloat(currentSector) * 0.008)
-                let targetX = logoFrame.midX + targetSpread * CGFloat(particle.targetOffset)
-
-                let xLinear = startX + (targetX - startX) * CGFloat(travel)
-                let sway = sin(
-                    time * 2.15 + particle.phase + phase * .pi * 2
-                ) * particle.drift * (1 - CGFloat(travel) * 0.55)
-                let x = xLinear + sway
-
-                let y = size.height + 12
-                    + (targetBaseY - (size.height + 12)) * CGFloat(travel)
-                    + sin(time * 1.35 + particle.phase) * 3.0
-
-                let absorption = phase > 0.80
-                    ? 1 - smoothStep((phase - 0.80) / 0.20)
-                    : 1
-
-                var particleContext = context
-                particleContext.opacity = particle.opacity * absorption * streamFade
-
-                draw(
-                    particle,
-                    at: CGPoint(x: x, y: y),
-                    in: &particleContext
-                )
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .allowsHitTesting(false)
-    }
-
-    private func draw(
-        _ particle: Particle,
-        at point: CGPoint,
-        in context: inout GraphicsContext
-    ) {
-        let s = particle.size
-
-        switch particle.kind {
-        case .leaf:
-            var path = Path()
-            path.move(to: CGPoint(x: point.x, y: point.y + s * 0.75))
-            path.addCurve(
-                to: CGPoint(x: point.x + s * 0.75, y: point.y - s * 0.30),
-                control1: CGPoint(x: point.x + s * 0.10, y: point.y + s * 0.15),
-                control2: CGPoint(x: point.x + s * 0.62, y: point.y - s * 0.08)
+// MARK: - Leaf
+private struct LeafShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width
+        let h = rect.height
+        var path = Path()
+        // Stem
+        path.move(
+            to: CGPoint(
+                x: w * 0.58,
+                y: h * 0.27
             )
-            path.addCurve(
-                to: CGPoint(x: point.x, y: point.y + s * 0.75),
-                control1: CGPoint(x: point.x + s * 0.43, y: point.y + s * 0.02),
-                control2: CGPoint(x: point.x + s * 0.10, y: point.y + s * 0.48)
-            )
-            context.fill(path, with: .color(particle.color))
-
-        case .flower:
-            var path = Path()
-            for i in 0..<5 {
-                let angle = CGFloat(i) * (.pi * 2 / 5)
-                let cx = point.x + cos(angle) * s * 0.46
-                let cy = point.y + sin(angle) * s * 0.46
-                path.addEllipse(
-                    in: CGRect(
-                        x: cx - s * 0.19,
-                        y: cy - s * 0.19,
-                        width: s * 0.38,
-                        height: s * 0.38
-                    )
-                )
-            }
-            path.addEllipse(
-                in: CGRect(
-                    x: point.x - s * 0.17,
-                    y: point.y - s * 0.17,
-                    width: s * 0.34,
-                    height: s * 0.34
-                )
-            )
-            context.fill(path, with: .color(particle.color))
-        }
-    }
-}
-
-private struct Particle {
-    enum Kind {
-        case leaf
-        case flower
-    }
-
-    let kind: Kind
-    let startOffset: CGFloat
-    let targetOffset: CGFloat
-    let duration: Double
-    let offset: Double
-    let phase: Double
-    let drift: CGFloat
-    let size: CGFloat
-    let opacity: Double
-    let color: Color
-
-    static let all: [Particle] = {
-        let palette: [Color] = [
-            Color(red: 0.15, green: 0.75, blue: 0.95),
-            Color(red: 0.52, green: 0.32, blue: 0.95),
-            Color(red: 0.95, green: 0.25, blue: 0.48),
-            Color(red: 1.00, green: 0.42, blue: 0.12),
-            Color(red: 1.00, green: 0.76, blue: 0.16)
-        ]
-
-        return (0..<44).map { i in
-            let seed = Double((i * 37 + 11) % 101) / 101.0
-            let kind: Kind = i % 4 == 0 ? .flower : .leaf
-
-            return Particle(
-                kind: kind,
-                startOffset: CGFloat(seed - 0.5) * 34,
-                targetOffset: CGFloat(((i * 29 + 7) % 101)) / 50.5 - 1,
-                duration: 0.05 + seed * 0.75,
-                offset: Double(i) / 44.0,
-                phase: seed * 12.0,
-                drift: 5 + CGFloat(seed) * 11,
-                size: 3.4 + CGFloat(seed) * 3.6,
-                opacity: 0.42 + seed * 0.34,
-                color: palette[i % palette.count]
-            )
-        }
-    }()
-}
-
-private func smoothStep(_ value: Double) -> Double {
-    let x = min(1, max(0, value))
-    return x * x * (3 - 2 * x)
-}
-
-private extension Color {
-    func mix(with other: Color, by amount: Double) -> Color {
-        let t = min(1, max(0, amount))
-        let c1 = UIColor(self)
-        let c2 = UIColor(other)
-
-        var r1: CGFloat = 0
-        var g1: CGFloat = 0
-        var b1: CGFloat = 0
-        var a1: CGFloat = 0
-        var r2: CGFloat = 0
-        var g2: CGFloat = 0
-        var b2: CGFloat = 0
-        var a2: CGFloat = 0
-
-        c1.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
-        c2.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
-
-        return Color(
-            red: Double(r1 + (r2 - r1) * t),
-            green: Double(g1 + (g2 - g1) * t),
-            blue: Double(b1 + (b2 - b1) * t),
-            opacity: Double(a1 + (a2 - a1) * t)
         )
+        path.addCurve(
+            to: CGPoint(
+                x: w * 0.69,
+                y: h * 0.08
+            ),
+            control1: CGPoint(
+                x: w * 0.59,
+                y: h * 0.18
+            ),
+            control2: CGPoint(
+                x: w * 0.65,
+                y: h * 0.11
+            )
+        )
+        // Leaf contour
+        path.move(
+            to: CGPoint(
+                x: w * 0.64,
+                y: h * 0.16
+            )
+        )
+        path.addCurve(
+            to: CGPoint(
+                x: w * 0.88,
+                y: h * 0.08
+            ),
+            control1: CGPoint(
+                x: w * 0.74,
+                y: h * 0.08
+            ),
+            control2: CGPoint(
+                x: w * 0.84,
+                y: h * 0.05
+            )
+        )
+        path.addCurve(
+            to: CGPoint(
+                x: w * 0.69,
+                y: h * 0.28
+            ),
+            control1: CGPoint(
+                x: w * 0.87,
+                y: h * 0.21
+            ),
+            control2: CGPoint(
+                x: w * 0.76,
+                y: h * 0.27
+            )
+        )
+        path.addCurve(
+            to: CGPoint(
+                x: w * 0.64,
+                y: h * 0.16
+            ),
+            control1: CGPoint(
+                x: w * 0.67,
+                y: h * 0.24
+            ),
+            control2: CGPoint(
+                x: w * 0.64,
+                y: h * 0.19
+            )
+        )
+        return path
     }
+}
+
+ContentView.swift
+
+:::writing{variant=“document” id=“74106”}
+
+import SwiftUI
+struct ContentView: View {
+    @State private var batteryLevel: Double = 80
+    @State private var isCharging = true
+    @State private var outlineProgress: Double = 1.0
+    var body: some View {
+        ZStack {
+            Color.black
+                .ignoresSafeArea()
+            VStack(spacing: 30) {
+                Spacer()
+                ChargingLogoView(
+                    progress: batteryLevel,
+                    outlineProgress: outlineProgress,
+                    isCharging: isCharging
+                )
+                .frame(width: 160, height: 160)
+                Text("\(Int(batteryLevel))%")
+                    .font(
+                        .system(
+                            size: 34,
+                            weight: .semibold,
+                            design: .rounded
+                        )
+                    )
+                    .foregroundStyle(.white)
+                Spacer()
+                VStack(spacing: 16) {
+                    Slider(
+                        value: $batteryLevel,
+                        in: 0...100,
+                        step: 1
+                    )
+                    .padding(.horizontal, 40)
+                    Button {
+                        isCharging.toggle()
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(
+                                systemName: isCharging
+                                    ? "bolt.fill"
+                                    : "power"
+                            )
+                            Text(
+                                isCharging
+                                    ? "Отключить зарядку"
+                                    : "Подключить зарядку"
+                            )
+                        }
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(
+                                    isCharging
+                                        ? Color.red.opacity(0.8)
+                                        : Color.green.opacity(0.8)
+                                )
+                        )
+                    }
+                    .padding(.horizontal, 30)
+                }
+                Spacer()
+                    .frame(height: 20)
+            }
+        }
+    }
+}
+#Preview {
+    ContentView()
 }
