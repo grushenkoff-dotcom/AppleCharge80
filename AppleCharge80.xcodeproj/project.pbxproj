@@ -1,0 +1,224 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AAA000000000000000000101 /* AppleCharge80App.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000201 /* AppleCharge80App.swift */; };
+		AAA000000000000000000102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000202 /* ContentView.swift */; };
+		AAA000000000000000000103 /* ChargingLogoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000203 /* ChargingLogoView.swift */; };
+		AAA000000000000000000104 /* AppleLogoShape.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000204 /* AppleLogoShape.swift */; };
+		AAA000000000000000000105 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000205 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		AAA000000000000000000201 /* AppleCharge80App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleCharge80App.swift; sourceTree = "<group>"; };
+		AAA000000000000000000202 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		AAA000000000000000000203 /* ChargingLogoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChargingLogoView.swift; sourceTree = "<group>"; };
+		AAA000000000000000000204 /* AppleLogoShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleLogoShape.swift; sourceTree = "<group>"; };
+		AAA000000000000000000205 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AAA000000000000000000206 /* AppleCharge80.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AppleCharge80.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AAA000000000000000000301 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AAA000000000000000000401 = {
+			isa = PBXGroup;
+			children = (
+				AAA000000000000000000402 /* AppleCharge80 */,
+				AAA000000000000000000403 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AAA000000000000000000402 = {
+			isa = PBXGroup;
+			children = (
+				AAA000000000000000000201 /* AppleCharge80App.swift */,
+				AAA000000000000000000202 /* ContentView.swift */,
+				AAA000000000000000000203 /* ChargingLogoView.swift */,
+				AAA000000000000000000204 /* AppleLogoShape.swift */,
+				AAA000000000000000000205 /* Assets.xcassets */,
+			);
+			path = AppleCharge80;
+			sourceTree = "<group>";
+		};
+		AAA000000000000000000403 = {
+			isa = PBXGroup;
+			children = (
+				AAA000000000000000000206 /* AppleCharge80.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AAA000000000000000000501 /* AppleCharge80 */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AAA000000000000000000601 /* Build configuration list for PBXNativeTarget "AppleCharge80" */;
+			buildPhases = (
+				AAA000000000000000000302 /* Sources */,
+				AAA000000000000000000301 /* Frameworks */,
+				AAA000000000000000000303 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = AppleCharge80;
+			productName = AppleCharge80;
+			productReference = AAA000000000000000000206 /* AppleCharge80.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AAA000000000000000000701 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					AAA000000000000000000501 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+				};
+			};
+			buildConfigurationList = AAA000000000000000000602 /* Build configuration list for PBXProject "AppleCharge80" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				ru,
+				Base,
+			);
+			mainGroup = AAA000000000000000000401;
+			productRefGroup = AAA000000000000000000403 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AAA000000000000000000501 /* AppleCharge80 */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AAA000000000000000000303 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AAA000000000000000000105 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AAA000000000000000000302 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AAA000000000000000000101 /* AppleCharge80App.swift in Sources */,
+				AAA000000000000000000102 /* ContentView.swift in Sources */,
+				AAA000000000000000000103 /* ChargingLogoView.swift in Sources */,
+				AAA000000000000000000104 /* AppleLogoShape.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AAA000000000000000000801 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = AppleCharge80;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.grushenkoff.AppleCharge80;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1";
+			};
+			name = Debug;
+		};
+		AAA000000000000000000802 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = AppleCharge80;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.grushenkoff.AppleCharge80;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1";
+			};
+			name = Release;
+		};
+		AAA000000000000000000803 /* Project Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		AAA000000000000000000804 /* Project Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AAA000000000000000000601 /* Build configuration list for PBXNativeTarget "AppleCharge80" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AAA000000000000000000801 /* Debug */,
+				AAA000000000000000000802 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AAA000000000000000000602 /* Build configuration list for PBXProject "AppleCharge80" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AAA000000000000000000803 /* Project Debug */,
+				AAA000000000000000000804 /* Project Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = AAA000000000000000000701 /* Project object */;
+}
