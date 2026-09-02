@@ -370,113 +370,92 @@ private struct PlantParticleField: View {
         concentration: CGFloat,
         time: TimeInterval
     ) {
+        // A current is a soft, continuous vertical stream of liquid/gas.
+        // It is deliberately NOT drawn as a short rounded "worm".
         let cycle = 5.4
         let raw = (time / cycle + particle.phase).truncatingRemainder(dividingBy: 1.0)
         let t = raw < 0 ? raw + 1.0 : raw
-        let eased = t * t * (3.0 - 2.0 * t)
+        let travel = t * t * (3.0 - 2.0 * t)
 
-        let baseX = centerX + particle.startX * size.width * 0.24 * concentration
-        let targetX = centerX + particle.targetX * logoWidth * 0.28 * concentration
+        let laneX = centerX + particle.startX * size.width * 0.24 * concentration
+        let bottomY = size.height + 95.0
+        let topY = logoBottomY - 1.0
+        let travelHeight = bottomY - topY
 
-        let horizontalWave = sin(
-            time * particle.flowSpeed +
-            particle.seed +
-            t * .pi * 2.0
-        )
+        // The whole ribbon translates upward; its shape remains fluid and smooth.
+        let flowY = bottomY - travelHeight * travel
+        let waveA = CGFloat(sin(time * 0.72 + particle.seed))
+        let waveB = CGFloat(sin(time * 0.41 + particle.seed * 1.73))
+        let center = laneX + (waveA * 0.72 + waveB * 0.28) * particle.drift * concentration
 
-        let xProgress = baseX + (targetX - baseX) * eased
-        let x = xProgress + horizontalWave * particle.drift * concentration
-
-        let bottomY = size.height + 35.0
-        let topY = logoBottomY - 1.5
-        let y = bottomY + (topY - bottomY) * eased
-
-        let absorbStart = 0.84
+        let absorbStart = 0.86
         let absorb = t > absorbStart
             ? min(1.0, (t - absorbStart) / (1.0 - absorbStart))
             : 0.0
         let absorbEase = absorb * absorb * (3.0 - 2.0 * absorb)
+        let targetX = centerX + particle.targetX * logoWidth * 0.26 * concentration
+        let finalCenter = center + (targetX - center) * absorbEase * absorbEase
+        let finalTop = flowY + (topY - flowY) * absorbEase
 
-        let finalX = x + (targetX - x) * absorbEase
-        let finalY = y + (topY - y) * absorbEase
-
-        let flicker = 0.70 + 0.30 * sin(
-            time * particle.flickerSpeed + particle.seed
-        )
-
+        let flicker = 0.72 + 0.28 * sin(time * particle.flickerSpeed + particle.seed)
         let alpha = particle.opacity * flicker * max(0.0, 1.0 - absorbEase)
-        guard alpha > 0.003 else { return }
+        guard alpha > 0.002 else { return }
 
-        let ribbonLength = particle.length * (
-            0.90 + 0.10 * sin(time * 0.55 + particle.seed)
-        )
-
-        let width = max(0.55, 1.10 * particle.scale)
+        // Five-times-longer, softly varying stream body. The width is broad and
+        // tapered, with no hard cap, so it reads as a fluid/gas current.
+        let ribbonLength = max(150.0, particle.length * 5.0)
+        let half = ribbonLength * 0.5
+        let width = max(1.8, 1.10 * particle.scale)
 
         var ribbon = Path()
-        ribbon.move(to: CGPoint(
-            x: finalX,
-            y: finalY + ribbonLength * 0.55
-        ))
-
+        ribbon.move(to: CGPoint(x: finalCenter, y: finalTop + half))
         ribbon.addCurve(
-            to: CGPoint(
-                x: finalX,
-                y: finalY - ribbonLength * 0.45
-            ),
+            to: CGPoint(x: finalCenter, y: finalTop - half),
             control1: CGPoint(
-                x: finalX + CGFloat(sin(time * 0.65 + particle.seed)) * 7.0 * concentration,
-                y: finalY + ribbonLength * 0.15
+                x: finalCenter + CGFloat(sin(time * 0.55 + particle.seed)) * 16.0 * concentration,
+                y: finalTop + half * 0.34
             ),
             control2: CGPoint(
-                x: finalX - CGFloat(sin(time * 0.48 + particle.seed * 1.7)) * 6.0 * concentration,
-                y: finalY - ribbonLength * 0.15
+                x: finalCenter - CGFloat(sin(time * 0.43 + particle.seed * 1.6)) * 13.0 * concentration,
+                y: finalTop - half * 0.30
             )
         )
 
-        context.opacity = alpha
+        context.opacity = alpha * 0.58
         context.stroke(
             ribbon,
-            with: .color(
-                Color(
-                    red: 0.20,
-                    green: min(1.0, 0.78 + 0.12 * flicker),
-                    blue: 0.20
-                )
-            ),
+            with: .color(Color(red: 0.18, green: 0.82 + 0.08 * flicker, blue: 0.22)),
             style: StrokeStyle(
-                lineWidth: width,
-                lineCap: .round
+                lineWidth: width * 2.8,
+                lineCap: .butt,
+                lineJoin: .round
             )
         )
 
-        var filament = Path()
-        filament.move(to: CGPoint(
-            x: finalX + 2.5 * particle.scale,
-            y: finalY + ribbonLength * 0.48
-        ))
-        filament.addCurve(
-            to: CGPoint(
-                x: finalX - 2.0 * particle.scale,
-                y: finalY - ribbonLength * 0.42
-            ),
+        // A softer inner current gives the impression of depth and flowing gas,
+        // without creating a separate worm-like filament.
+        var inner = Path()
+        inner.move(to: CGPoint(x: finalCenter + 0.8, y: finalTop + half * 0.96))
+        inner.addCurve(
+            to: CGPoint(x: finalCenter - 0.8, y: finalTop - half * 0.96),
             control1: CGPoint(
-                x: finalX + 5.0 * particle.scale,
-                y: finalY + ribbonLength * 0.12
+                x: finalCenter - CGFloat(sin(time * 0.48 + particle.seed * 0.7)) * 10.0 * concentration,
+                y: finalTop + half * 0.25
             ),
             control2: CGPoint(
-                x: finalX - 5.0 * particle.scale,
-                y: finalY - ribbonLength * 0.15
+                x: finalCenter + CGFloat(sin(time * 0.39 + particle.seed * 1.3)) * 9.0 * concentration,
+                y: finalTop - half * 0.22
             )
         )
 
         context.opacity = alpha * 0.32
         context.stroke(
-            filament,
-            with: .color(Color(red: 0.38, green: 0.95, blue: 0.30)),
+            inner,
+            with: .color(Color(red: 0.42, green: 0.98, blue: 0.34)),
             style: StrokeStyle(
-                lineWidth: max(0.45, width * 0.52),
-                lineCap: .round
+                lineWidth: max(0.9, width * 0.82),
+                lineCap: .butt,
+                lineJoin: .round
             )
         )
     }
@@ -490,10 +469,10 @@ private struct PlantParticleField: View {
         concentration: CGFloat,
         time: Double
     ) {
-        // Flowers and pollen are physically carried by a green vertical current.
-        // Their main trajectory is always upward; horizontal motion is only a
-        // small drift within the same current lane.
-        let cycle: Double = particle.kind == .flower ? 5.1 : 3.7
+        // Flowers and pollen are cargo inside the green vertical currents.
+        // Their phase and speed are deliberately tied to the same current,
+        // so a flower cannot form a separate horizontal band near the logo.
+        let cycle: Double = 5.4
         let raw = (time / cycle + particle.phase).truncatingRemainder(dividingBy: 1.0)
         let t = raw < 0 ? raw + 1.0 : raw
 
@@ -504,9 +483,9 @@ private struct PlantParticleField: View {
 
         // Persistent lane: the cargo stays inside one stream instead of
         // travelling sideways toward a separate target while rising.
-        let laneX = centerX + particle.startX * size.width * 0.24 * concentration
-        let drift1 = CGFloat(sin(time * particle.flowSpeed + particle.seed)) * particle.drift * concentration
-        let drift2 = CGFloat(sin(time * 0.37 + particle.seed * 1.91)) * particle.drift * 0.28 * concentration
+        let laneX = centerX + particle.startX * size.width * 0.24
+        let drift1 = CGFloat(sin(time * particle.flowSpeed + particle.seed)) * particle.drift
+        let drift2 = CGFloat(sin(time * 0.37 + particle.seed * 1.91)) * particle.drift * 0.28
 
         var x = laneX + drift1 + drift2
         var y = bottomY - distance * eased
@@ -518,7 +497,7 @@ private struct PlantParticleField: View {
             : 0.0
         let absorbEase = absorb * absorb * (3.0 - 2.0 * absorb)
 
-        let targetX = centerX + particle.targetX * logoWidth * 0.26 * concentration
+        let targetX = centerX + particle.targetX * logoWidth * 0.26
         x += (targetX - x) * absorbEase * absorbEase
         y += (topY - y) * absorbEase
         y = min(topY, y)
@@ -700,7 +679,7 @@ private struct PlantParticle {
                     drift: CGFloat(3.0 + Double(i % 7)),
                     opacity: 0.105 + Double(i % 9) * 0.015,
                     scale: CGFloat(0.62 + Double(i % 6) * 0.075),
-                    length: CGFloat(30 + i % 28),
+                    length: CGFloat(150 + i % 136),
                     seed: Double(i) * 1.17,
                     flowSpeed: 0.42 + Double(i % 5) * 0.055,
                     flickerSpeed: 1.0 + Double(i % 4) * 0.18,
@@ -712,18 +691,27 @@ private struct PlantParticle {
         }
 
         for i in 0..<70 {
+            // Bind every flower to an actual stream lane. The same phase and
+            // lane coordinates are used by that stream, so the flower is
+            // physically carried upward by the ribbon instead of swimming
+            // horizontally along the Apple's lower edge.
+            let streamIndex = (i * 7 + 11) % 294
+            let streamPhase = fract(Double(streamIndex) * 0.6180339887)
+            let streamStartX = signedUnit(streamIndex * 17 + 3)
+            let streamTargetX = signedUnit(streamIndex * 11 + 7) * 0.80
+
             result.append(
                 PlantParticle(
                     kind: .flower,
-                    phase: fract(0.31 + Double(i) * 0.754877666),
-                    startX: signedUnit(i * 23 + 5),
-                    targetX: signedUnit(i * 13 + 2) * 0.82,
+                    phase: streamPhase,
+                    startX: streamStartX,
+                    targetX: streamTargetX,
                     drift: CGFloat(2.0 + Double(i % 6)),
                     opacity: 0.25 + Double(i % 7) * 0.035,
                     scale: CGFloat(0.46 + Double(i % 5) * 0.13),
                     length: 0,
-                    seed: Double(i) * 1.83 + 9,
-                    flowSpeed: 0.48 + Double(i % 5) * 0.055,
+                    seed: Double(streamIndex) * 1.17 + 0.41,
+                    flowSpeed: 0.42 + Double(streamIndex % 5) * 0.055,
                     flickerSpeed: 0.60 + Double(i % 4) * 0.12,
                     rotationSpeed: 0.12 + Double(i % 7) * 0.025,
                     rotationPhase: Double(i % 11) * 0.57,
