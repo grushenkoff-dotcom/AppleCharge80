@@ -140,4 +140,4 @@ private struct AppleLogoFill: View {
 
             let logoHeight = min(
                 CGFloat(181),
-                geo.size.height * 0.
+                geo.size.height * 0.60
