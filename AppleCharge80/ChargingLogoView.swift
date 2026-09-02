@@ -21,6 +21,9 @@ struct ChargingLogoView: View {
             let logoWidth: CGFloat = logoHeight * 814.0 / 1000.0
 
             GeometryReader { geo in
+                let logoTopY = geoSafeTop(geo.size.height)
+                let logoCenterY = logoTopY + logoHeight * 0.5
+
                 ZStack {
                     // The living stream is deliberately behind the logo.
                     PlantParticleField(
@@ -28,7 +31,8 @@ struct ChargingLogoView: View {
                         time: now.timeIntervalSinceReferenceDate,
                         active: isCharging && disconnectElapsed == nil,
                         logoWidth: logoWidth,
-                        logoHeight: logoHeight
+                        logoHeight: logoHeight,
+                        logoTopY: logoTopY
                     )
                     .frame(width: geo.size.width, height: geo.size.height)
 
@@ -43,6 +47,7 @@ struct ChargingLogoView: View {
                         disconnectTotal: disconnectTotal
                     )
                     .frame(width: logoWidth, height: logoHeight)
+                    .position(x: geo.size.width / 2, y: logoCenterY)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -62,6 +67,10 @@ struct ChargingLogoView: View {
         }
         .background(Color.black)
         .ignoresSafeArea()
+    }
+
+    private func geoSafeTop(_ height: CGFloat) -> CGFloat {
+        max(58.0, height * 0.10)
     }
 
     private var clampedProgress: Double {
@@ -319,41 +328,49 @@ private struct PlantParticleField: View {
     let active: Bool
     let logoWidth: CGFloat
     let logoHeight: CGFloat
+    let logoTopY: CGFloat
 
+    // 42 coherent fluid currents. Each current is rendered in 7 soft layers
+    // so the field is dense without becoming hundreds of worm-like lines.
     private let particles: [PlantParticle] = PlantParticle.make222()
 
     var body: some View {
         Canvas { context, size in
             guard active && progress > 0.0 && progress < 1.0 else { return }
 
-            let centerX = size.width * 0.5
-            let logoBottomY = size.height * 0.5 + logoHeight * 0.5
+            let logoBottomY = logoTopY + logoHeight
+            let bottomY = size.height + 30.0
+            let topY = logoBottomY
+            let travelHeight = max(1.0, bottomY - topY)
 
-            let concentration: CGFloat =
-                progress >= 0.92
-                ? CGFloat(max(0.18, (1.0 - progress) / 0.08))
-                : 1.0
+            // The currents occupy only the space BELOW the Apple. They never
+            // enter the logo and never exist above its lower boundary.
+            let streamParticles = particles.filter { $0.kind == .stream }
+            let cargoParticles = particles.filter { $0.kind != .stream }
 
-            for particle in particles where particle.kind == .stream {
-                drawVerticalCurrent(
+            for particle in streamParticles {
+                drawFluidCurrent(
                     &context,
                     particle: particle,
                     size: size,
-                    centerX: centerX,
-                    logoBottomY: logoBottomY,
-                    concentration: concentration,
+                    centerX: size.width * 0.5,
+                    topY: topY,
+                    bottomY: bottomY,
+                    travelHeight: travelHeight,
                     time: time
                 )
             }
 
-            for particle in particles where particle.kind != .stream {
-                drawMovingParticle(
+            for particle in cargoParticles {
+                drawCargo(
                     &context,
                     particle: particle,
                     size: size,
-                    centerX: centerX,
-                    logoBottomY: logoBottomY,
-                    concentration: concentration,
+                    centerX: size.width * 0.5,
+                    topY: topY,
+                    bottomY: bottomY,
+                    travelHeight: travelHeight,
+                    logoWidth: logoWidth,
                     time: time
                 )
             }
@@ -361,153 +378,172 @@ private struct PlantParticleField: View {
         .allowsHitTesting(false)
     }
 
-    private func drawVerticalCurrent(
-        _ context: inout GraphicsContext,
-        particle: PlantParticle,
-        size: CGSize,
+    private func streamState(
+        _ particle: PlantParticle,
+        time: TimeInterval,
+        topY: CGFloat,
+        bottomY: CGFloat,
+        travelHeight: CGFloat,
         centerX: CGFloat,
-        logoBottomY: CGFloat,
-        concentration: CGFloat,
-        time: TimeInterval
-    ) {
-        // A current is a soft, continuous vertical stream of liquid/gas.
-        // It is deliberately NOT drawn as a short rounded "worm".
+        size: CGSize
+    ) -> (x: CGFloat, headY: CGFloat, length: CGFloat, phase: Double) {
         let cycle = 5.4
         let raw = (time / cycle + particle.phase).truncatingRemainder(dividingBy: 1.0)
         let t = raw < 0 ? raw + 1.0 : raw
-        let travel = t * t * (3.0 - 2.0 * t)
+        let distance = t * travelHeight
+        let headY = bottomY - distance
 
-        let laneX = centerX + particle.startX * size.width * 0.24 * concentration
-        let bottomY = size.height + 95.0
-        let topY = logoBottomY - 1.0
-        let travelHeight = bottomY - topY
+        let laneX = centerX + particle.startX * size.width * 0.24
+        let sway = CGFloat(
+            sin(time * particle.flowSpeed + particle.seed) * 0.75
+            + sin(time * 0.39 + particle.seed * 1.73) * 0.25
+        ) * particle.drift
 
-        // The whole ribbon translates upward; its shape remains fluid and smooth.
-        let flowY = bottomY - travelHeight * travel
-        let waveA = CGFloat(sin(time * 0.72 + particle.seed))
-        let waveB = CGFloat(sin(time * 0.41 + particle.seed * 1.73))
-        let center = laneX + (waveA * 0.72 + waveB * 0.28) * particle.drift * concentration
-
-        let absorbStart = 0.86
-        let absorb = t > absorbStart
-            ? min(1.0, (t - absorbStart) / (1.0 - absorbStart))
-            : 0.0
-        let absorbEase = absorb * absorb * (3.0 - 2.0 * absorb)
-        let targetX = centerX + particle.targetX * logoWidth * 0.26 * concentration
-        let finalCenter = center + (targetX - center) * absorbEase * absorbEase
-        let finalTop = flowY + (topY - flowY) * absorbEase
-
-        let flicker = 0.72 + 0.28 * sin(time * particle.flickerSpeed + particle.seed)
-        let alpha = particle.opacity * flicker * max(0.0, 1.0 - absorbEase)
-        guard alpha > 0.002 else { return }
-
-        // Five-times-longer, softly varying stream body. The width is broad and
-        // tapered, with no hard cap, so it reads as a fluid/gas current.
-        let ribbonLength = max(150.0, particle.length * 5.0)
-        let half = ribbonLength * 0.5
-        let width = max(1.8, 1.10 * particle.scale)
-
-        var ribbon = Path()
-        ribbon.move(to: CGPoint(x: finalCenter, y: finalTop + half))
-        ribbon.addCurve(
-            to: CGPoint(x: finalCenter, y: finalTop - half),
-            control1: CGPoint(
-                x: finalCenter + CGFloat(sin(time * 0.55 + particle.seed)) * 16.0 * concentration,
-                y: finalTop + half * 0.34
-            ),
-            control2: CGPoint(
-                x: finalCenter - CGFloat(sin(time * 0.43 + particle.seed * 1.6)) * 13.0 * concentration,
-                y: finalTop - half * 0.30
-            )
-        )
-
-        context.opacity = alpha * 0.58
-        context.stroke(
-            ribbon,
-            with: .color(Color(red: 0.18, green: 0.82 + 0.08 * flicker, blue: 0.22)),
-            style: StrokeStyle(
-                lineWidth: width * 2.8,
-                lineCap: .butt,
-                lineJoin: .round
-            )
-        )
-
-        // A softer inner current gives the impression of depth and flowing gas,
-        // without creating a separate worm-like filament.
-        var inner = Path()
-        inner.move(to: CGPoint(x: finalCenter + 0.8, y: finalTop + half * 0.96))
-        inner.addCurve(
-            to: CGPoint(x: finalCenter - 0.8, y: finalTop - half * 0.96),
-            control1: CGPoint(
-                x: finalCenter - CGFloat(sin(time * 0.48 + particle.seed * 0.7)) * 10.0 * concentration,
-                y: finalTop + half * 0.25
-            ),
-            control2: CGPoint(
-                x: finalCenter + CGFloat(sin(time * 0.39 + particle.seed * 1.3)) * 9.0 * concentration,
-                y: finalTop - half * 0.22
-            )
-        )
-
-        context.opacity = alpha * 0.32
-        context.stroke(
-            inner,
-            with: .color(Color(red: 0.42, green: 0.98, blue: 0.34)),
-            style: StrokeStyle(
-                lineWidth: max(0.9, width * 0.82),
-                lineCap: .butt,
-                lineJoin: .round
-            )
-        )
+        return (laneX + sway, headY, max(150.0, particle.length * 5.0), t)
     }
 
-    private func drawMovingParticle(
+    private func drawFluidCurrent(
         _ context: inout GraphicsContext,
         particle: PlantParticle,
         size: CGSize,
         centerX: CGFloat,
-        logoBottomY: CGFloat,
-        concentration: CGFloat,
-        time: Double
+        topY: CGFloat,
+        bottomY: CGFloat,
+        travelHeight: CGFloat,
+        time: TimeInterval
     ) {
-        // Flowers and pollen are cargo inside the green vertical currents.
-        // Their phase and speed are deliberately tied to the same current,
-        // so a flower cannot form a separate horizontal band near the logo.
-        let cycle: Double = 5.4
-        let raw = (time / cycle + particle.phase).truncatingRemainder(dividingBy: 1.0)
-        let t = raw < 0 ? raw + 1.0 : raw
+        let state = streamState(
+            particle,
+            time: time,
+            topY: topY,
+            bottomY: bottomY,
+            travelHeight: travelHeight,
+            centerX: centerX,
+            size: size
+        )
 
-        let bottomY = size.height + 55.0
-        let topY = logoBottomY - 0.8
-        let distance = bottomY - topY
-        let eased = t * t * (3.0 - 2.0 * t)
+        let top = max(topY, state.headY - state.length)
+        let bottom = min(bottomY, state.headY)
+        guard bottom - top > 3 else { return }
 
-        // Persistent lane: the cargo stays inside one stream instead of
-        // travelling sideways toward a separate target while rising.
-        let laneX = centerX + particle.startX * size.width * 0.24
-        let drift1 = CGFloat(sin(time * particle.flowSpeed + particle.seed)) * particle.drift
-        let drift2 = CGFloat(sin(time * 0.37 + particle.seed * 1.91)) * particle.drift * 0.28
+        let span = bottom - top
+        let baseWidth = max(2.0, particle.scale * 2.2)
+        let distanceFromLogo = top - topY
+        let absorption = max(0.0, min(1.0, distanceFromLogo / 28.0))
+        let alpha = particle.opacity
+            * (0.72 + 0.28 * sin(time * particle.flickerSpeed + particle.seed))
+            * absorption
 
-        var x = laneX + drift1 + drift2
-        var y = bottomY - distance * eased
+        // Seven close, soft layers = a single thick fluid/gas current rather
+        // than seven separate filaments. Their paths share the same flow.
+        for layer in 0..<7 {
+            let f = CGFloat(layer - 3) / 3.0
+            let offset = f * baseWidth * 1.15
+            let bend = 7.0 + CGFloat(layer % 3) * 2.0
 
-        // At the Apple boundary the stream and its cargo are absorbed together.
-        let absorbStart = 0.86
-        let absorb = t > absorbStart
-            ? min(1.0, (t - absorbStart) / (1.0 - absorbStart))
-            : 0.0
-        let absorbEase = absorb * absorb * (3.0 - 2.0 * absorb)
+            var path = Path()
+            path.move(to: CGPoint(x: state.x + offset, y: bottom))
+            path.addCurve(
+                to: CGPoint(x: state.x + offset * 0.45, y: top),
+                control1: CGPoint(
+                    x: state.x + offset + CGFloat(sin(time * 0.55 + particle.seed + Double(layer))) * bend,
+                    y: bottom - span * 0.30
+                ),
+                control2: CGPoint(
+                    x: state.x + offset * 0.20 + CGFloat(sin(time * 0.43 + particle.seed * 1.7 + Double(layer))) * bend,
+                    y: top + span * 0.30
+                )
+            )
 
-        let targetX = centerX + particle.targetX * logoWidth * 0.26
-        x += (targetX - x) * absorbEase * absorbEase
-        y += (topY - y) * absorbEase
-        y = min(topY, y)
+            context.opacity = max(0.008, alpha * (0.075 - Double(abs(layer - 3)) * 0.006))
+            context.stroke(
+                path,
+                with: .color(Color(red: 0.20, green: 0.84, blue: 0.25)),
+                style: StrokeStyle(
+                    lineWidth: baseWidth * (2.8 - CGFloat(abs(layer - 3)) * 0.25),
+                    lineCap: .round,
+                    lineJoin: .round
+                )
+            )
+        }
 
-        let flicker = 0.68 + 0.32 * sin(time * particle.flickerSpeed + particle.seed * 1.7)
-        let alpha = particle.opacity * flicker * max(0.0, 1.0 - absorbEase)
-        guard alpha > 0.002 else { return }
+        // A broad translucent body unifies the seven layers into gas/liquid.
+        var body = Path()
+        body.move(to: CGPoint(x: state.x, y: bottom))
+        body.addCurve(
+            to: CGPoint(x: state.x - 1.0, y: top),
+            control1: CGPoint(x: state.x + 9.0, y: bottom - span * 0.34),
+            control2: CGPoint(x: state.x - 8.0, y: top + span * 0.32)
+        )
+        context.opacity = alpha * 0.075
+        context.stroke(
+            body,
+            with: .color(Color(red: 0.35, green: 0.96, blue: 0.32)),
+            style: StrokeStyle(lineWidth: baseWidth * 7.0, lineCap: .round)
+        )
+    }
 
-        let scale = particle.scale * max(0.035, 1.0 - absorbEase * 0.93)
-        context.opacity = alpha
+    private func drawCargo(
+        _ context: inout GraphicsContext,
+        particle: PlantParticle,
+        size: CGSize,
+        centerX: CGFloat,
+        topY: CGFloat,
+        bottomY: CGFloat,
+        travelHeight: CGFloat,
+        logoWidth: CGFloat,
+        time: TimeInterval
+    ) {
+        // Every flower/leaf is assigned to one of the 42 actual currents.
+        // It inherits that current's phase, speed and lane. This is the key
+        // rule that prevents horizontal swarming at the Apple boundary.
+        let streamIndex: Int
+        switch particle.kind {
+        case .flower:
+            streamIndex = particle.boundStream
+        case .leaf:
+            streamIndex = particle.boundStream
+        case .pollen:
+            streamIndex = particle.boundStream
+        case .stream:
+            return
+        }
+
+        let streams = particles.filter { $0.kind == .stream }
+        guard !streams.isEmpty else { return }
+        let stream = streams[streamIndex % streams.count]
+        let state = streamState(
+            stream,
+            time: time,
+            topY: topY,
+            bottomY: bottomY,
+            travelHeight: travelHeight,
+            centerX: centerX,
+            size: size
+        )
+
+        // Cargo sits at a fixed position inside the moving current. The
+        // current therefore carries it upward instead of merely passing by.
+        let relative = particle.cargoOffset
+        var x = state.x + CGFloat(sin(time * 0.55 + particle.seed)) * particle.drift
+        var y = state.headY - state.length * relative
+
+        // Only the final approach is attracted to the exact Apple boundary.
+        // Until then, the cargo follows its current without a sideways target.
+        let distanceToLogo = y - topY
+        if distanceToLogo < 80.0 {
+            let q = max(0.0, min(1.0, 1.0 - distanceToLogo / 80.0))
+            let ease = q * q * (3.0 - 2.0 * q)
+            let targetX = centerX + particle.targetX * logoWidth * 0.22
+            x += (targetX - x) * ease
+            y = topY + max(0.0, distanceToLogo) * (1.0 - ease)
+        }
+
+        // Never render cargo above the Apple boundary.
+        guard y >= topY else { return }
+
+        let fade = max(0.0, min(1.0, (y - topY) / 22.0))
+        context.opacity = particle.opacity * (0.25 + 0.75 * fade)
 
         switch particle.kind {
         case .flower:
@@ -515,7 +551,15 @@ private struct PlantParticleField: View {
                 &context,
                 particle: particle,
                 at: CGPoint(x: x, y: y),
-                scale: scale,
+                scale: particle.scale,
+                time: time
+            )
+        case .leaf:
+            drawLeaf(
+                &context,
+                particle: particle,
+                at: CGPoint(x: x, y: y),
+                scale: particle.scale,
                 time: time
             )
         case .pollen:
@@ -523,11 +567,44 @@ private struct PlantParticleField: View {
                 &context,
                 particle: particle,
                 at: CGPoint(x: x, y: y),
-                scale: scale,
+                scale: particle.scale,
                 time: time
             )
         case .stream:
             break
+        }
+    }
+
+    private func drawLeaf(
+        _ context: inout GraphicsContext,
+        particle: PlantParticle,
+        at point: CGPoint,
+        scale: CGFloat,
+        time: TimeInterval
+    ) {
+        let angle = CGFloat(time * particle.rotationSpeed + particle.rotationPhase + sin(time * 0.31 + particle.seed) * 0.22)
+        let w = 8.0 * scale
+        let h = 14.0 * scale
+
+        var leaf = Path()
+        leaf.move(to: CGPoint(x: point.x, y: point.y - h * 0.5))
+        leaf.addCurve(
+            to: CGPoint(x: point.x + w * 0.52, y: point.y + h * 0.36),
+            control1: CGPoint(x: point.x + w * 0.72, y: point.y - h * 0.28),
+            control2: CGPoint(x: point.x + w * 0.75, y: point.y + h * 0.22)
+        )
+        leaf.addCurve(
+            to: CGPoint(x: point.x, y: point.y - h * 0.5),
+            control1: CGPoint(x: point.x - w * 0.16, y: point.y + h * 0.24),
+            control2: CGPoint(x: point.x - w * 0.30, y: point.y - h * 0.10)
+        )
+        leaf.closeSubpath()
+
+        context.drawLayer { layer in
+            layer.translateBy(x: point.x, y: point.y)
+            layer.rotate(by: Angle(radians: Double(angle)))
+            layer.translateBy(x: -point.x, y: -point.y)
+            layer.fill(leaf, with: .color(Color(red: 0.42, green: 0.78, blue: 0.12)))
         }
     }
 
@@ -538,36 +615,18 @@ private struct PlantParticleField: View {
         scale: CGFloat,
         time: TimeInterval
     ) {
-        let pulse = 0.65 + 0.35 * sin(
-            time * particle.flickerSpeed + particle.seed
-        )
-
+        let pulse = 0.65 + 0.35 * sin(time * particle.flickerSpeed + particle.seed)
         let radius = max(0.45, 1.25 * scale * pulse)
         let outerRadius = radius * 2.1
 
         context.opacity *= 0.22
         context.fill(
-            Path(
-                ellipseIn: CGRect(
-                    x: point.x - outerRadius,
-                    y: point.y - outerRadius,
-                    width: outerRadius * 2.0,
-                    height: outerRadius * 2.0
-                )
-            ),
+            Path(ellipseIn: CGRect(x: point.x - outerRadius, y: point.y - outerRadius, width: outerRadius * 2, height: outerRadius * 2)),
             with: .color(Color(red: 0.30, green: 0.92, blue: 0.25))
         )
-
         context.opacity *= 3.8
         context.fill(
-            Path(
-                ellipseIn: CGRect(
-                    x: point.x - radius,
-                    y: point.y - radius,
-                    width: radius * 2.0,
-                    height: radius * 2.0
-                )
-            ),
+            Path(ellipseIn: CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)),
             with: .color(Color(red: 0.60, green: 1.0, blue: 0.42))
         )
     }
@@ -579,76 +638,34 @@ private struct PlantParticleField: View {
         scale: CGFloat,
         time: TimeInterval
     ) {
-        let angle = CGFloat(
-            time * particle.rotationSpeed +
-            particle.rotationPhase +
-            sin(time * 0.27 + particle.seed) * 0.35
-        )
-
+        let angle = CGFloat(time * particle.rotationSpeed + particle.rotationPhase + sin(time * 0.27 + particle.seed) * 0.35)
         let petalRadius = max(1.15, 3.0 * scale)
         let flowerRadius = petalRadius * 1.45
-
         var flower = Path()
 
         for i in 0..<5 {
-            let base = CGFloat(i) * .pi * 2.0 / 5.0
-            let a = base + angle
-
+            let a = CGFloat(i) * .pi * 2.0 / 5.0 + angle
             let cx = point.x + cos(a) * flowerRadius
             let cy = point.y + sin(a) * flowerRadius
-
-            flower.addEllipse(
-                in: CGRect(
-                    x: cx - petalRadius,
-                    y: cy - petalRadius * 0.82,
-                    width: petalRadius * 2.0,
-                    height: petalRadius * 1.64
-                )
-            )
+            flower.addEllipse(in: CGRect(x: cx - petalRadius, y: cy - petalRadius * 0.82, width: petalRadius * 2, height: petalRadius * 1.64))
         }
 
         let centerRadius = petalRadius * 0.70
-
-        flower.addEllipse(
-            in: CGRect(
-                x: point.x - centerRadius,
-                y: point.y - centerRadius,
-                width: centerRadius * 2.0,
-                height: centerRadius * 2.0
-            )
-        )
+        flower.addEllipse(in: CGRect(x: point.x - centerRadius, y: point.y - centerRadius, width: centerRadius * 2, height: centerRadius * 2))
 
         let flowerColor: Color = particle.flowerPink
             ? Color(red: 1.0, green: 0.58, blue: 0.72)
             : Color(red: 1.0, green: 0.96, blue: 0.98)
-
         context.fill(flower, with: .color(flowerColor))
 
-        let center = CGRect(
-            x: point.x - centerRadius * 0.38,
-            y: point.y - centerRadius * 0.38,
-            width: centerRadius * 0.76,
-            height: centerRadius * 0.76
-        )
-
-        context.opacity *= 0.82
         context.fill(
-            Path(ellipseIn: center),
-            with: .color(
-                particle.flowerPink
-                    ? Color(red: 0.98, green: 0.76, blue: 0.30)
-                    : Color(red: 1.0, green: 0.82, blue: 0.46)
-            )
+            Path(ellipseIn: CGRect(x: point.x - centerRadius * 0.38, y: point.y - centerRadius * 0.38, width: centerRadius * 0.76, height: centerRadius * 0.76)),
+            with: .color(particle.flowerPink ? Color(red: 0.98, green: 0.76, blue: 0.30) : Color(red: 1.0, green: 0.82, blue: 0.46))
         )
     }
 }
-
 private struct PlantParticle {
-    enum Kind {
-        case stream
-        case flower
-        case pollen
-    }
+    enum Kind { case stream, leaf, flower, pollen }
 
     let kind: Kind
     let phase: Double
@@ -664,89 +681,106 @@ private struct PlantParticle {
     let rotationSpeed: Double
     let rotationPhase: Double
     let flowerPink: Bool
+    let boundStream: Int
+    let cargoOffset: CGFloat
 
     static func make222() -> [PlantParticle] {
         var result: [PlantParticle] = []
-        result.reserveCapacity(474)
+        result.reserveCapacity(294)
 
-        for i in 0..<294 {
-            result.append(
-                PlantParticle(
-                    kind: .stream,
-                    phase: fract(Double(i) * 0.6180339887),
-                    startX: signedUnit(i * 17 + 3),
-                    targetX: signedUnit(i * 11 + 7) * 0.80,
-                    drift: CGFloat(3.0 + Double(i % 7)),
-                    opacity: 0.105 + Double(i % 9) * 0.015,
-                    scale: CGFloat(0.62 + Double(i % 6) * 0.075),
-                    length: CGFloat(150 + i % 136),
-                    seed: Double(i) * 1.17,
-                    flowSpeed: 0.42 + Double(i % 5) * 0.055,
-                    flickerSpeed: 1.0 + Double(i % 4) * 0.18,
-                    rotationSpeed: 0,
-                    rotationPhase: 0,
-                    flowerPink: false
-                )
-            )
+        for i in 0..<42 {
+            result.append(PlantParticle(
+                kind: .stream,
+                phase: fract(Double(i) * 0.6180339887),
+                startX: signedUnit(i * 17 + 3),
+                targetX: signedUnit(i * 11 + 7) * 0.80,
+                drift: CGFloat(3.0 + Double(i % 7)),
+                opacity: 0.48 + Double(i % 7) * 0.025,
+                scale: CGFloat(0.85 + Double(i % 5) * 0.10),
+                length: CGFloat(30 + i % 28),
+                seed: Double(i) * 1.17,
+                flowSpeed: 0.42 + Double(i % 5) * 0.055,
+                flickerSpeed: 1.0 + Double(i % 4) * 0.18,
+                rotationSpeed: 0,
+                rotationPhase: 0,
+                flowerPink: false,
+                boundStream: i,
+                cargoOffset: 0
+            ))
         }
 
         for i in 0..<70 {
-            // Bind every flower to an actual stream lane. The same phase and
-            // lane coordinates are used by that stream, so the flower is
-            // physically carried upward by the ribbon instead of swimming
-            // horizontally along the Apple's lower edge.
-            let streamIndex = (i * 7 + 11) % 294
-            let streamPhase = fract(Double(streamIndex) * 0.6180339887)
-            let streamStartX = signedUnit(streamIndex * 17 + 3)
-            let streamTargetX = signedUnit(streamIndex * 11 + 7) * 0.80
+            let stream = (i * 7 + 11) % 42
+            let streamParticle = result[stream]
+            result.append(PlantParticle(
+                kind: .flower,
+                phase: streamParticle.phase,
+                startX: streamParticle.startX,
+                targetX: streamParticle.targetX,
+                drift: CGFloat(1.5 + Double(i % 5)),
+                opacity: 0.26 + Double(i % 6) * 0.035,
+                scale: CGFloat(0.46 + Double(i % 5) * 0.13),
+                length: 0,
+                seed: streamParticle.seed + Double(i) * 0.13,
+                flowSpeed: streamParticle.flowSpeed,
+                flickerSpeed: 0.60 + Double(i % 4) * 0.12,
+                rotationSpeed: 0.12 + Double(i % 7) * 0.025,
+                rotationPhase: Double(i % 11) * 0.57,
+                flowerPink: i % 3 != 0,
+                boundStream: stream,
+                cargoOffset: CGFloat(0.20 + Double(i % 7) * 0.105)
+            ))
+        }
 
-            result.append(
-                PlantParticle(
-                    kind: .flower,
-                    phase: streamPhase,
-                    startX: streamStartX,
-                    targetX: streamTargetX,
-                    drift: CGFloat(2.0 + Double(i % 6)),
-                    opacity: 0.25 + Double(i % 7) * 0.035,
-                    scale: CGFloat(0.46 + Double(i % 5) * 0.13),
-                    length: 0,
-                    seed: Double(streamIndex) * 1.17 + 0.41,
-                    flowSpeed: 0.42 + Double(streamIndex % 5) * 0.055,
-                    flickerSpeed: 0.60 + Double(i % 4) * 0.12,
-                    rotationSpeed: 0.12 + Double(i % 7) * 0.025,
-                    rotationPhase: Double(i % 11) * 0.57,
-                    flowerPink: i % 3 != 0
-                )
-            )
+        for i in 0..<72 {
+            let stream = (i * 11 + 5) % 42
+            let streamParticle = result[stream]
+            result.append(PlantParticle(
+                kind: .leaf,
+                phase: streamParticle.phase,
+                startX: streamParticle.startX,
+                targetX: streamParticle.targetX,
+                drift: CGFloat(1.4 + Double(i % 5)),
+                opacity: 0.22 + Double(i % 6) * 0.03,
+                scale: CGFloat(0.45 + Double(i % 5) * 0.11),
+                length: 0,
+                seed: streamParticle.seed + Double(i) * 0.21 + 33,
+                flowSpeed: streamParticle.flowSpeed,
+                flickerSpeed: 0.8,
+                rotationSpeed: 0.10 + Double(i % 6) * 0.02,
+                rotationPhase: Double(i % 9) * 0.61,
+                flowerPink: false,
+                boundStream: stream,
+                cargoOffset: CGFloat(0.27 + Double(i % 6) * 0.10)
+            ))
         }
 
         for i in 0..<110 {
-            result.append(
-                PlantParticle(
-                    kind: .pollen,
-                    phase: fract(0.17 + Double(i) * 0.4142135623),
-                    startX: signedUnit(i * 29 + 1),
-                    targetX: signedUnit(i * 19 + 4) * 0.86,
-                    drift: CGFloat(2.0 + Double(i % 6)),
-                    opacity: 0.13 + Double(i % 6) * 0.035,
-                    scale: CGFloat(0.45 + Double(i % 5) * 0.14),
-                    length: 0,
-                    seed: Double(i) * 2.31 + 17,
-                    flowSpeed: 0.65 + Double(i % 5) * 0.08,
-                    flickerSpeed: 1.6 + Double(i % 6) * 0.22,
-                    rotationSpeed: 0,
-                    rotationPhase: 0,
-                    flowerPink: false
-                )
-            )
+            let stream = (i * 13 + 3) % 42
+            let streamParticle = result[stream]
+            result.append(PlantParticle(
+                kind: .pollen,
+                phase: streamParticle.phase,
+                startX: streamParticle.startX,
+                targetX: streamParticle.targetX,
+                drift: CGFloat(1.0 + Double(i % 5)),
+                opacity: 0.13 + Double(i % 6) * 0.028,
+                scale: CGFloat(0.45 + Double(i % 5) * 0.14),
+                length: 0,
+                seed: streamParticle.seed + Double(i) * 0.31 + 70,
+                flowSpeed: streamParticle.flowSpeed,
+                flickerSpeed: 1.6 + Double(i % 6) * 0.22,
+                rotationSpeed: 0,
+                rotationPhase: 0,
+                flowerPink: false,
+                boundStream: stream,
+                cargoOffset: CGFloat(0.12 + Double(i % 8) * 0.11)
+            ))
         }
-
         return result
     }
 
-    private static func fract(_ x: Double) -> Double {
-        x - floor(x)
-    }
+    private static func fract(_ x: Double) -> Double { x - floor(x) }
 
     private static func signedUnit(_ x: Int) -> CGFloat {
         let v = sin(Double(x) * 12.9898) * 43758.5453
