@@ -375,7 +375,7 @@ private struct PlantParticleField: View {
         let t = raw < 0 ? raw + 1.0 : raw
         let eased = t * t * (3.0 - 2.0 * t)
 
-        let baseX = centerX + particle.startX * size.width * 0.20 * concentration
+        let baseX = centerX + particle.startX * size.width * 0.24 * concentration
         let targetX = centerX + particle.targetX * logoWidth * 0.28 * concentration
 
         let horizontalWave = sin(
@@ -411,7 +411,7 @@ private struct PlantParticleField: View {
             0.90 + 0.10 * sin(time * 0.55 + particle.seed)
         )
 
-        let width = max(0.7, 1.35 * particle.scale)
+        let width = max(0.55, 1.10 * particle.scale)
 
         var ribbon = Path()
         ribbon.move(to: CGPoint(
@@ -482,74 +482,73 @@ private struct PlantParticleField: View {
     }
 
     private func drawMovingParticle(
-        _ context: inout GraphicsContext,
+        context: inout GraphicsContext,
         particle: PlantParticle,
+        time: Double,
         size: CGSize,
         centerX: CGFloat,
         logoBottomY: CGFloat,
-        concentration: CGFloat,
-        time: TimeInterval
+        concentration: CGFloat
     ) {
-        let cycle: Double = particle.kind == .flower ? 4.8 : 4.2
+        // Flowers and pollen are physically carried by a green vertical current.
+        // Their main trajectory is always upward; horizontal motion is only a
+        // small drift within the same current lane.
+        let cycle: Double = particle.kind == .flower ? 5.1 : 3.7
         let raw = (time / cycle + particle.phase).truncatingRemainder(dividingBy: 1.0)
         let t = raw < 0 ? raw + 1.0 : raw
+
+        let bottomY = size.height + 55.0
+        let topY = logoBottomY - 0.8
+        let distance = bottomY - topY
         let eased = t * t * (3.0 - 2.0 * t)
 
-        let startY = size.height + 45.0
-        let targetY = logoBottomY - 1.0
+        // Persistent lane: the cargo stays inside one stream instead of
+        // travelling sideways toward a separate target while rising.
+        let laneX = centerX + particle.startX * size.width * 0.24 * concentration
+        let drift1 = CGFloat(sin(time * particle.flowSpeed + particle.seed)) * particle.drift * concentration
+        let drift2 = CGFloat(sin(time * 0.37 + particle.seed * 1.91)) * particle.drift * 0.28 * concentration
 
-        let startX = centerX + particle.startX * size.width * 0.22 * concentration
-        let targetX = centerX + particle.targetX * logoWidth * 0.30 * concentration
+        var x = laneX + drift1 + drift2
+        var y = bottomY - distance * eased
 
-        var x = startX + (targetX - startX) * eased
-        var y = startY + (targetY - startY) * eased
-
-        let sway = sin(
-            time * particle.flowSpeed +
-            particle.seed +
-            t * .pi * 2.0
-        )
-
-        x += sway * particle.drift * concentration
-
-        let absorbStart = 0.84
+        // At the Apple boundary the stream and its cargo are absorbed together.
+        let absorbStart = 0.86
         let absorb = t > absorbStart
             ? min(1.0, (t - absorbStart) / (1.0 - absorbStart))
             : 0.0
         let absorbEase = absorb * absorb * (3.0 - 2.0 * absorb)
 
-        x += (targetX - x) * absorbEase
-        y += (targetY - y) * absorbEase
-        y = min(targetY, y)
+        let targetX = centerX + particle.targetX * logoWidth * 0.26 * concentration
+        x += (targetX - x) * absorbEase * absorbEase
+        y += (topY - y) * absorbEase
+        y = min(topY, y)
 
-        let flicker = 0.70 + 0.30 * sin(
-            time * particle.flickerSpeed +
-            particle.seed * 1.7
-        )
-
+        let flicker = 0.68 + 0.32 * sin(time * particle.flickerSpeed + particle.seed * 1.7)
         let alpha = particle.opacity * flicker * max(0.0, 1.0 - absorbEase)
         guard alpha > 0.002 else { return }
 
-        let scale = particle.scale * max(0.04, 1.0 - absorbEase * 0.92)
-
+        let scale = particle.scale * max(0.035, 1.0 - absorbEase * 0.93)
         context.opacity = alpha
 
         switch particle.kind {
         case .flower:
             drawFlower(
-                &context,
-                particle: particle,
-                at: CGPoint(x: x, y: y),
+                context: &context,
+                x: x,
+                y: y,
                 scale: scale,
-                time: time
+                rotation: particle.rotationSpeed * time
+                    + particle.rotationPhase
+                    + sin(time * 0.27 + particle.seed) * 0.35,
+                pink: particle.flowerPink
             )
         case .pollen:
             drawPollen(
-                &context,
-                particle: particle,
-                at: CGPoint(x: x, y: y),
+                context: &context,
+                x: x,
+                y: y,
                 scale: scale,
-                time: time
+                seed: particle.seed
             )
         case .stream:
             break
@@ -692,9 +691,9 @@ private struct PlantParticle {
 
     static func make222() -> [PlantParticle] {
         var result: [PlantParticle] = []
-        result.reserveCapacity(222)
+        result.reserveCapacity(474)
 
-        for i in 0..<42 {
+        for i in 0..<294 {
             result.append(
                 PlantParticle(
                     kind: .stream,
@@ -702,9 +701,9 @@ private struct PlantParticle {
                     startX: signedUnit(i * 17 + 3),
                     targetX: signedUnit(i * 11 + 7) * 0.80,
                     drift: CGFloat(3.0 + Double(i % 7)),
-                    opacity: 0.15 + Double(i % 7) * 0.022,
-                    scale: CGFloat(0.75 + Double(i % 5) * 0.10),
-                    length: CGFloat(24 + i % 22),
+                    opacity: 0.105 + Double(i % 9) * 0.015,
+                    scale: CGFloat(0.62 + Double(i % 6) * 0.075),
+                    length: CGFloat(30 + i % 28),
                     seed: Double(i) * 1.17,
                     flowSpeed: 0.42 + Double(i % 5) * 0.055,
                     flickerSpeed: 1.0 + Double(i % 4) * 0.18,
