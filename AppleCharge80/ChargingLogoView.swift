@@ -32,6 +32,9 @@ var body: some View {
             logoHeight * 814.0 / 1000.0
         GeometryReader { geo in
             ZStack(alignment: .top) {
+                // -------------------------------------------------
+                // PARTICLES + GROWING FLOW
+                // -------------------------------------------------
                 PlantParticleField(
                     progress: progress,
                     isCharging: isCharging,
@@ -42,11 +45,16 @@ var body: some View {
                     width: geo.size.width,
                     height: geo.size.height
                 )
+                // -------------------------------------------------
+                // APPLE LOGO
+                // -------------------------------------------------
                 AppleLogoFill(
                     progress: progress,
                     time: chargeElapsed,
                     disconnectElapsed: disconnectElapsed,
-                    disconnectOrder: disconnectOrder
+                    disconnectOrder: disconnectOrder,
+                    sectorDuration: sectorDuration,
+                    sectorStartStep: sectorStartStep
                 )
                 .frame(
                     width: logoWidth,
@@ -111,6 +119,8 @@ let progress: Double
 let time: TimeInterval
 let disconnectElapsed: TimeInterval?
 let disconnectOrder: [Int]
+let sectorDuration: TimeInterval
+let sectorStartStep: TimeInterval
 private let sectorCount = 6
 private let colors: [SectorColor] = [
     SectorColor(r: 0.05, g: 0.42, b: 0.95),
@@ -152,10 +162,16 @@ var body: some View {
         let alive =
             normalizedProgress >= 1 &&
             disconnectElapsed == nil
+        let contactStrength =
+            logoContactStrength(
+                progress: normalizedProgress,
+                time: time,
+                disconnectElapsed: disconnectElapsed
+            )
         ZStack {
-            // =================================================
+            // =====================================================
             // COLOR LAYER
-            // =================================================
+            // =====================================================
             ZStack(alignment: .top) {
                 ForEach(
                     0..<sectorCount,
@@ -166,7 +182,11 @@ var body: some View {
                             index: index,
                             completed: completed,
                             currentFraction: currentFraction,
-                            disconnectElapsed: disconnectElapsed
+                            disconnectElapsed: disconnectElapsed,
+                            disconnectOrder: disconnectOrder,
+                            sectorStartStep: sectorStartStep,
+                            sectorDuration: sectorDuration,
+                            sectorCount: sectorCount
                         )
                     if visibility > 0.001 {
                         let pulse =
@@ -205,9 +225,27 @@ var body: some View {
             .clipShape(
                 AppleBodyShape()
             )
-            // =================================================
+            // =====================================================
+            // CONTACT EFFECT
+            //
+            // Свет возникает именно там, где поток входит
+            // в нижнюю часть логотипа. Он находится ВНУТРИ
+            // AppleBodyShape, поэтому зеленая линия не может
+            // продолжаться по самому логотипу.
+            // =====================================================
+            if contactStrength > 0.001 {
+                contactGlow(
+                    size: geo.size,
+                    bodyBottom: bodyBottom,
+                    strength: contactStrength
+                )
+                .clipShape(
+                    AppleBodyShape()
+                )
+            }
+            // =====================================================
             // EXTERNAL SOFT EDGE ONLY
-            // =================================================
+            // =====================================================
             AppleBodyShape()
                 .stroke(
                     Color.white.opacity(
@@ -219,9 +257,9 @@ var body: some View {
                 .opacity(
                     alive ? 0.85 : 0.65
                 )
-            // =================================================
+            // =====================================================
             // SHARP EDGE
-            // =================================================
+            // =====================================================
             AppleBodyShape()
                 .stroke(
                     Color.white.opacity(
@@ -234,9 +272,9 @@ var body: some View {
                     ),
                     lineWidth: 0.55
                 )
-            // =================================================
+            // =====================================================
             // LEAF
-            // =================================================
+            // =====================================================
             if leafGrowth > 0 {
                 AppleLeafShape()
                     .trim(
@@ -265,12 +303,114 @@ var body: some View {
         }
     }
 }
+// MARK: - Contact Strength
+private func logoContactStrength(
+    progress: Double,
+    time: TimeInterval,
+    disconnectElapsed: TimeInterval?
+) -> Double {
+    guard isLogoGrowing(progress) else {
+        return 0
+    }
+    guard disconnectElapsed == nil else {
+        return 0
+    }
+    // Контакт начинается ближе к завершению подъема.
+    let t =
+        max(
+            0,
+            min(
+                1,
+                (progress - 0.72) / 0.28
+            )
+        )
+    let grow =
+        smoothStep(t)
+    // Очень мягкое сердечное дыхание.
+    let beat =
+        heartbeat(
+            time,
+            phase: 0
+        )
+    return
+        grow *
+        (
+            0.20 +
+            0.34 * beat
+        )
+}
+private func isLogoGrowing(
+    _ value: Double
+) -> Bool {
+    value > 0.72
+}
+// MARK: - Contact Glow
+private func contactGlow(
+    size: CGSize,
+    bodyBottom: CGFloat,
+    strength: Double
+) -> some View {
+    let centerX =
+        size.width * 0.5
+    let centerY =
+        bodyBottom - 1.5
+    let width =
+        max(
+            12,
+            size.width * 0.085
+        )
+    let height =
+        max(
+            8,
+            size.height * 0.055
+        )
+    return Ellipse()
+        .fill(
+            RadialGradient(
+                colors: [
+                    Color(
+                        red: 0.55,
+                        green: 1.0,
+                        blue: 0.40
+                    )
+                    .opacity(
+                        0.42 * strength
+                    ),
+                    Color(
+                        red: 0.42,
+                        green: 0.92,
+                        blue: 0.32
+                    )
+                    .opacity(
+                        0.12 * strength
+                    ),
+                    Color.clear
+                ],
+                center: .center,
+                startRadius: 0,
+                endRadius: width
+            )
+        )
+        .frame(
+            width: width * 2.2,
+            height: height * 2.2
+        )
+        .position(
+            x: centerX,
+            y: centerY
+        )
+        .blur(radius: 2.5)
+}
 // MARK: - Sector Visibility
 private func sectorVisibility(
     index: Int,
     completed: Int,
     currentFraction: Double,
-    disconnectElapsed: TimeInterval?
+    disconnectElapsed: TimeInterval?,
+    disconnectOrder: [Int],
+    sectorStartStep: TimeInterval,
+    sectorDuration: TimeInterval,
+    sectorCount: Int
 ) -> Double {
     guard let elapsed = disconnectElapsed else {
         if index < completed {
@@ -503,10 +643,19 @@ private func drawFlow(
     let logoBottomY =
         logoTopY +
         logoHeight
+    // ---------------------------------------------------------
+    // ВАЖНО:
+    // Поток теперь действительно доходит до границы логотипа.
+    // Он не заканчивается за 10 px до него.
+    // ---------------------------------------------------------
     let targetY =
-        logoBottomY - 10
+        logoBottomY + 1
     let startY =
         canvasSize.height + 24
+    // ---------------------------------------------------------
+    // Более длительный и мягкий рост.
+    // Поток не летит к логотипу прямой линией.
+    // ---------------------------------------------------------
     let travel =
         max(
             0,
@@ -521,6 +670,9 @@ private func drawFlow(
         startY -
         (startY - targetY) *
         CGFloat(eased)
+    // ---------------------------------------------------------
+    // Гибкое горизонтальное движение.
+    // ---------------------------------------------------------
     let centerX =
         canvasSize.width * 0.5
     let phase =
@@ -540,11 +692,8 @@ private func drawFlow(
         bendA +
         bendB
     // ---------------------------------------------------------
-    // Длина видимого ростка.
-    //
-    // В отличие от старой версии не рисуем весь путь
-    // от низа до головы. Рисуется только короткий растущий
-    // участок, поэтому он не выглядит как вертикальная линия.
+    // Только короткий растущий участок.
+    // Никакой зеленой линии снизу доверху.
     // ---------------------------------------------------------
     let stemLength =
         min(
@@ -567,6 +716,9 @@ private func drawFlow(
     let tailX =
         centerX +
         wave
+    // ---------------------------------------------------------
+    // Поток стал еще уже.
+    // ---------------------------------------------------------
     let width =
         max(
             1.35,
@@ -621,7 +773,9 @@ private func drawFlow(
         )
     )
     // ---------------------------------------------------------
-    // Светящийся кончик
+    // Светящийся кончик.
+    // Он подходит к логотипу, но сам логотип перекрывает
+    // его своим цветным слоем.
     // ---------------------------------------------------------
     let radius =
         max(
@@ -741,6 +895,7 @@ private func drawPollen(
         )
     }
 }
+// MARK: - Ease Out
 private func easeOut(
     _ value: Double
 ) -> Double {
@@ -755,6 +910,7 @@ private func easeOut(
             3
         )
 }
+// MARK: - Heartbeat
 private func heartbeat(
     _ time: TimeInterval,
     phase: Double
