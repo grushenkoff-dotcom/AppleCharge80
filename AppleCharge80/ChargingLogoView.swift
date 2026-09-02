@@ -1,260 +1,1079 @@
 import SwiftUI
 
 struct ChargingLogoView: View {
+
     let progress: Double
     let outlineProgress: Double
     let isCharging: Bool
 
-    @State private var displayedProgress: Double = 0
-    @State private var leafProgress: Double = 0
-    @State private var disappearedSegments: Set<Int> = []
-    @State private var isDischargingAnimation = false
-    @State private var generation = 0
+    private let sectorCount = 6
 
-    private let segmentCount = 8
+    @State private var disconnectOrder: [Int] = []
+    @State private var disconnectStart: Date?
+    @State private var disconnectGeneration = 0
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: false)) { _ in
-            ZStack {
-                AppleChargeLogo(
-                    progress: displayedProgress,
-                    outlineProgress: outlineProgress,
-                    disappearedSegments: disappearedSegments
+
+        TimelineView(
+            .animation(
+                minimumInterval: 1.0 / 60.0,
+                paused: false
+            )
+        ) { context in
+
+            let now = context.date.timeIntervalSinceReferenceDate
+
+            GeometryReader { geometry in
+
+                let logoSize = min(
+                    geometry.size.width,
+                    geometry.size.height
                 )
 
-                LeafShape()
-                    .trim(from: 0, to: leafProgress)
-                    .stroke(
-                        Color(red: 0.20, green: 0.78, blue: 0.38),
-                        style: StrokeStyle(
-                            lineWidth: 4.5,
-                            lineCap: .round,
-                            lineJoin: .round
-                        )
+                // 30 мм ≈ 181 pt на iPhone с плотностью около 460 ppi / 3x.
+                // Ограничиваем размер, чтобы логотип не становился чрезмерным.
+                let actualSize = min(
+                    logoSize,
+                    181
+                )
+
+                ZStack {
+
+                    // MARK: Exact Apple logo
+
+                    AppleLogoFill(
+                        progress: effectiveProgress(
+                            now: now
+                        ),
+                        time: now,
+                        disconnectOrder: disconnectOrder,
+                        disconnectStart: disconnectStart,
+                        sectorCount: sectorCount
                     )
-                    .opacity(leafProgress > 0 ? 1 : 0)
+                    .frame(
+                        width: actualSize,
+                        height: actualSize * 1000.0 / 814.0
+                    )
+
+                    // MARK: Flying plant particles
+
+                    if effectiveProgress(now: now) > 0.0001 {
+                        PlantParticleField(
+                            progress: effectiveProgress(
+                                now: now
+                            ),
+                            time: now,
+                            isDisconnecting: isDisconnecting(now: now)
+                        )
+                        .frame(
+                            width: geometry.size.width,
+                            height: geometry.size.height
+                        )
+                        .allowsHitTesting(false)
+                    }
+                }
+                .frame(
+                    width: geometry.size.width,
+                    height: geometry.size.height
+                )
             }
-            .frame(width: 118, height: 118)
         }
         .onAppear {
-            displayedProgress = clamped(progress)
-            updateLeaf(for: displayedProgress, animated: false)
-        }
-        .onChange(of: progress) { _, newValue in
-            guard isCharging else { return }
-
-            displayedProgress = clamped(newValue)
-            updateLeaf(for: displayedProgress, animated: true)
-        }
-        .onChange(of: isCharging) { _, charging in
-            if charging {
-                startCharging()
-            } else {
-                startDischarging()
+            if !isCharging && progress > 0 {
+                beginDisconnect()
             }
         }
+        .onChange(of: isCharging) { _, charging in
+
+            if charging {
+                disconnectGeneration += 1
+                disconnectStart = nil
+                disconnectOrder = []
+            } else {
+                beginDisconnect()
+            }
+        }
+    }
+
+    // MARK: - Progress
+
+    private func effectiveProgress(now: TimeInterval) -> Double {
+
+        guard !isDisconnecting(now: now) else {
+
+            guard let start = disconnectStart else {
+                return clamped(progress)
+            }
+
+            let elapsed = now - start
+
+            if elapsed >= 3.0 {
+                return 0
+            }
+
+            // Сохраняем исходный уровень как базу,
+            // пока случайные сектора исчезают.
+            return clamped(progress)
+        }
+
+        return clamped(progress)
     }
 
     private func clamped(_ value: Double) -> Double {
         min(max(value, 0), 100)
     }
 
-    private func updateLeaf(for value: Double, animated: Bool) {
-        let target: Double
+    // MARK: - Disconnect
 
-        if value < 88 {
-            target = 0
-        } else {
-            target = min(max((value - 88) / 12, 0), 1)
-        }
+    private func beginDisconnect() {
 
-        if animated {
-            withAnimation(.linear(duration: 0.08)) {
-                leafProgress = target
+        disconnectGeneration += 1
+
+        disconnectStart = Date()
+        disconnectOrder = Array(0..<sectorCount).shuffled()
+
+        let generation = disconnectGeneration
+
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + 3.0
+        ) {
+            guard generation == disconnectGeneration else {
+                return
             }
-        } else {
-            leafProgress = target
+
+            disconnectStart = nil
+            disconnectOrder = []
         }
     }
 
-    private func startCharging() {
-        generation += 1
-        isDischargingAnimation = false
-        disappearedSegments.removeAll()
+    private func isDisconnecting(now: TimeInterval) -> Bool {
 
-        displayedProgress = clamped(progress)
-        updateLeaf(for: displayedProgress, animated: true)
-    }
-
-    private func startDischarging() {
-        generation += 1
-        let currentGeneration = generation
-
-        isDischargingAnimation = true
-        leafProgress = 0
-        disappearedSegments.removeAll()
-
-        let order = Array(0..<segmentCount).shuffled()
-
-        for (offset, segment) in order.enumerated() {
-            let delay = 0.10 * Double(offset)
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                guard currentGeneration == generation,
-                      isDischargingAnimation else { return }
-
-                withAnimation(.easeOut(duration: 0.12)) {
-                    disappearedSegments.insert(segment)
-                }
-
-                if offset == order.count - 1 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
-                        guard currentGeneration == generation else { return }
-
-                        displayedProgress = 0
-                        isDischargingAnimation = false
-                    }
-                }
-            }
-        }
-    }
-}
-
-private struct AppleChargeLogo: View {
-    let progress: Double
-    let outlineProgress: Double
-    let disappearedSegments: Set<Int>
-
-    private let segmentCount = 8
-
-    var body: some View {
-        GeometryReader { geometry in
-            let size = min(geometry.size.width, geometry.size.height)
-
-            ZStack {
-                Circle()
-                    .trim(from: 0, to: min(max(outlineProgress, 0), 1))
-                    .stroke(
-                        Color.white.opacity(0.85),
-                        style: StrokeStyle(
-                            lineWidth: 1.5,
-                            lineCap: .round
-                        )
-                    )
-                    .frame(width: size * 0.72, height: size * 0.72)
-                    .rotationEffect(.degrees(-90))
-
-                ForEach(0..<segmentCount, id: \.self) { index in
-                    let visible = isSegmentVisible(index)
-
-                    ChargeSegment(
-                        index: index,
-                        count: segmentCount,
-                        radius: size * 0.36,
-                        thickness: size * 0.105
-                    )
-                    .fill(Color(red: 0.25, green: 0.82, blue: 0.38))
-                    .opacity(visible ? 1 : 0)
-                    .scaleEffect(visible ? 1 : 0.82)
-                    .animation(.easeOut(duration: 0.12), value: visible)
-                }
-
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: size * 0.25, weight: .bold))
-                    .foregroundStyle(.white)
-                    .opacity(progress > 0 ? 1 : 0)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-
-    private func isSegmentVisible(_ index: Int) -> Bool {
-        guard !disappearedSegments.contains(index) else {
+        guard let start = disconnectStart else {
             return false
         }
 
-        let fraction = min(max(progress / 100, 0), 1)
-        let visibleCount = Int(ceil(fraction * Double(segmentCount)))
-
-        return index < visibleCount
+        return now - start < 3.0
     }
 }
 
-private struct ChargeSegment: Shape {
+// MARK: - Apple fill
+
+private struct AppleLogoFill: View {
+
+    let progress: Double
+    let time: TimeInterval
+
+    let disconnectOrder: [Int]
+    let disconnectStart: Date?
+
+    let sectorCount: Int
+
+    private let colors: [Color] = [
+
+        // bottom → top
+        Color(
+            red: 0.05,
+            green: 0.42,
+            blue: 0.95
+        ),
+
+        Color(
+            red: 0.39,
+            green: 0.18,
+            blue: 0.78
+        ),
+
+        Color(
+            red: 0.82,
+            green: 0.05,
+            blue: 0.35
+        ),
+
+        Color(
+            red: 0.98,
+            green: 0.22,
+            blue: 0.10
+        ),
+
+        Color(
+            red: 1.00,
+            green: 0.52,
+            blue: 0.05
+        ),
+
+        Color(
+            red: 0.12,
+            green: 0.72,
+            blue: 0.28
+        )
+    ]
+
+    var body: some View {
+
+        GeometryReader { geometry in
+
+            let bodyRect = CGRect(
+                x: 0,
+                y: 0,
+                width: geometry.size.width,
+                height: geometry.size.height
+            )
+
+            let bodyTop = bodyRect.height * 0.245
+            let bodyBottom = bodyRect.height
+            let bodyHeight = bodyBottom - bodyTop
+
+            let bandHeight =
+                bodyHeight / CGFloat(sectorCount)
+
+            let normalized =
+                min(max(progress / 100.0, 0), 1)
+
+            let scaled =
+                normalized * Double(sectorCount)
+
+            let completed =
+                min(
+                    sectorCount,
+                    Int(floor(scaled))
+                )
+
+            let currentFraction =
+                min(
+                    max(
+                        scaled - Double(completed),
+                        0
+                    ),
+                    1
+                )
+
+            ZStack {
+
+                // MARK: Body sectors
+
+                ForEach(
+                    0..<sectorCount,
+                    id: \.self
+                ) { index in
+
+                    let fillAmount: CGFloat = {
+
+                        if index < completed {
+                            return 1
+                        }
+
+                        if index == completed {
+                            return CGFloat(currentFraction)
+                        }
+
+                        return 0
+                    }()
+
+                    if fillAmount > 0 {
+
+                        LiquidSector(
+                            color: colors[index],
+                            index: index,
+                            fillAmount: fillAmount,
+                            bandHeight: bandHeight,
+                            bodyTop: bodyTop,
+                            bodyBottom: bodyBottom,
+                            time: time
+                        )
+                    }
+                }
+            }
+            .mask(
+                AppleBodyShape()
+            )
+            .opacity(
+                globalOpacity()
+            )
+
+            // MARK: Leaf
+
+            LeafGrowth(
+                progress: normalized,
+                disconnectStart: disconnectStart,
+                time: time
+            )
+            .frame(
+                width: geometry.size.width,
+                height: geometry.size.height
+            )
+        }
+    }
+
+    // MARK: - Sector opacity during disconnect
+
+    private func globalOpacity() -> Double {
+
+        guard let start = disconnectStart else {
+            return 1
+        }
+
+        let elapsed =
+            Date().timeIntervalSince(start)
+
+        if elapsed >= 3.0 {
+            return 0
+        }
+
+        return 1
+    }
+}
+
+// MARK: - Liquid sector
+
+private struct LiquidSector: View {
+
+    let color: Color
     let index: Int
-    let count: Int
-    let radius: CGFloat
-    let thickness: CGFloat
+    let fillAmount: CGFloat
+    let bandHeight: CGFloat
+    let bodyTop: CGFloat
+    let bodyBottom: CGFloat
+    let time: TimeInterval
+
+    var body: some View {
+
+        let height =
+            max(
+                0.5,
+                bandHeight * fillAmount
+            )
+
+        let sectorBottom =
+            bodyBottom
+            - CGFloat(index) * bandHeight
+
+        let centerY =
+            sectorBottom
+            - height / 2
+
+        let largeWave =
+            sin(
+                time * 0.82
+                + Double(index) * 1.37
+            )
+
+        let secondWave =
+            sin(
+                time * 0.47
+                + Double(index) * 2.41
+            )
+
+        let xOffset =
+            CGFloat(
+                largeWave * 2.8
+                + secondWave * 1.7
+            )
+
+        let yOffset =
+            CGFloat(
+                sin(
+                    time * 0.63
+                    + Double(index) * 1.91
+                )
+                * bandHeight
+                * 0.035
+            )
+
+        Rectangle()
+            .fill(color)
+            .frame(
+                maxWidth: .infinity,
+                height: height
+            )
+            .position(
+                x: xOffset
+                    + UIScreen.main.bounds.width / 2,
+                y: centerY + yOffset
+            )
+            .clipShape(
+                LiquidWaveShape(
+                    amplitude:
+                        max(
+                            3,
+                            bandHeight * 0.16
+                        ),
+                    phase:
+                        time * 0.75
+                        + Double(index) * 1.83
+                )
+            )
+    }
+}
+
+// MARK: - Large organic wave
+
+private struct LiquidWaveShape: Shape {
+
+    let amplitude: CGFloat
+    let phase: Double
 
     func path(in rect: CGRect) -> Path {
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let outerRadius = radius
-        let innerRadius = radius - thickness
-
-        let fullSegment = 2 * CGFloat.pi / CGFloat(count)
-        let gap = CGFloat.pi / 180 * 4
-
-        let start = -CGFloat.pi / 2 + CGFloat(index) * fullSegment + gap / 2
-        let end = -CGFloat.pi / 2 + CGFloat(index + 1) * fullSegment - gap / 2
 
         var path = Path()
 
-        path.addArc(
-            center: center,
-            radius: outerRadius,
-            startAngle: Angle(radians: Double(start)),
-            endAngle: Angle(radians: Double(end)),
-            clockwise: false
+        let samples = 48
+
+        path.move(
+            to: CGPoint(
+                x: 0,
+                y: rect.height
+            )
         )
 
-        path.addArc(
-            center: center,
-            radius: innerRadius,
-            startAngle: Angle(radians: Double(end)),
-            endAngle: Angle(radians: Double(start)),
-            clockwise: true
+        for i in 0...samples {
+
+            let t =
+                Double(i)
+                / Double(samples)
+
+            let x =
+                rect.width
+                * CGFloat(t)
+
+            let wave1 =
+                sin(
+                    t * .pi * 2.0 * 0.72
+                    + phase
+                )
+
+            let wave2 =
+                sin(
+                    t * .pi * 2.0 * 1.31
+                    - phase * 0.63
+                )
+
+            let wave3 =
+                sin(
+                    t * .pi * 2.0 * 0.37
+                    + phase * 0.41
+                )
+
+            let y =
+                amplitude * (
+                    wave1
+                    + wave2 * 0.42
+                    + wave3 * 0.23
+                )
+
+            path.addLine(
+                to: CGPoint(
+                    x: x,
+                    y: y
+                )
+            )
+        }
+
+        path.addLine(
+            to: CGPoint(
+                x: rect.width,
+                y: rect.height
+            )
         )
 
         path.closeSubpath()
+
         return path
     }
 }
 
-private struct LeafShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        let w = rect.width
-        let h = rect.height
+// MARK: - Leaf growth 88 → 100%
 
-        var path = Path()
+private struct LeafGrowth: View {
 
-        path.move(to: CGPoint(x: w * 0.58, y: h * 0.28))
+    let progress: Double
+    let disconnectStart: Date?
+    let time: TimeInterval
 
-        path.addCurve(
-            to: CGPoint(x: w * 0.69, y: h * 0.08),
-            control1: CGPoint(x: w * 0.59, y: h * 0.18),
-            control2: CGPoint(x: w * 0.65, y: h * 0.11)
-        )
+    var body: some View {
 
-        path.move(to: CGPoint(x: w * 0.64, y: h * 0.16))
+        let growth = leafGrowth
 
-        path.addCurve(
-            to: CGPoint(x: w * 0.88, y: h * 0.08),
-            control1: CGPoint(x: w * 0.74, y: h * 0.08),
-            control2: CGPoint(x: w * 0.84, y: h * 0.05)
-        )
-
-        path.addCurve(
-            to: CGPoint(x: w * 0.69, y: h * 0.28),
-            control1: CGPoint(x: w * 0.87, y: h * 0.21),
-            control2: CGPoint(x: w * 0.76, y: h * 0.27)
-        )
-
-        path.addCurve(
-            to: CGPoint(x: w * 0.64, y: h * 0.16),
-            control1: CGPoint(x: w * 0.67, y: h * 0.24),
-            control2: CGPoint(x: w * 0.64, y: h * 0.19)
-        )
-
-        return path
+        AppleLeafShape()
+            .fill(
+                Color(
+                    red: 0.12,
+                    green: 0.72,
+                    blue: 0.28
+                )
+            )
+            .scaleEffect(
+                x: 0.10 + growth * 0.90,
+                y: 0.10 + growth * 0.90,
+                anchor: UnitPoint(
+                    x: 0.52,
+                    y: 0.20
+                )
+            )
+            .rotationEffect(
+                .degrees(
+                    -7.0 + growth * 7.0
+                ),
+                anchor: UnitPoint(
+                    x: 0.52,
+                    y: 0.20
+                )
+            )
+            .opacity(
+                growth > 0
+                    ? min(1, growth * 1.25)
+                    : 0
+            )
     }
+
+    private var leafGrowth: Double {
+
+        if let disconnectStart {
+
+            let elapsed =
+                Date().timeIntervalSince(
+                    disconnectStart
+                )
+
+            if elapsed >= 3.0 {
+                return 0
+            }
+
+            // Полностью сформированный лист
+            // постепенно возвращается к бутону
+            // за те же 3 секунды.
+            let retract =
+                min(
+                    max(elapsed / 3.0, 0),
+                    1
+                )
+
+            return max(
+                0,
+                1 - retract
+            )
+        }
+
+        // Лист начинается только с 88%.
+        guard progress >= 0.88 else {
+            return 0
+        }
+
+        return min(
+            max(
+                (progress - 0.88) / 0.12,
+                0
+            ),
+            1
+        )
+    }
+}
+
+// MARK: - 222 plant particles
+
+private struct PlantParticleField: View {
+
+    let progress: Double
+    let time: TimeInterval
+    let isDisconnecting: Bool
+
+    private let particles =
+        PlantParticle.all
+
+    var body: some View {
+
+        Canvas { context, size in
+
+            guard progress >= 0.88 else {
+                return
+            }
+
+            // Поток начинает слабеть после 96%.
+            let streamStrength: Double = {
+
+                if progress >= 1.0 {
+                    return 0
+                }
+
+                let p =
+                    min(
+                        max(
+                            (progress - 0.88) / 0.12,
+                            0
+                        ),
+                        1
+                    )
+
+                return 0.95 - p * 0.95
+            }()
+
+            guard streamStrength > 0 else {
+                return
+            }
+
+            for particle in particles {
+
+                let cycle =
+                    3.8 + particle.speed
+
+                let rawPhase =
+                    (
+                        time / cycle
+                        + particle.offset
+                    )
+                    .truncatingRemainder(
+                        dividingBy: 1
+                    )
+
+                let phase =
+                    rawPhase < 0
+                    ? rawPhase + 1
+                    : rawPhase
+
+                let eased =
+                    phase * phase
+                    * (3 - 2 * phase)
+
+                // Старт в нижней/средней зоне экрана.
+                // Все частицы движутся к нижней части логотипа.
+                let startY =
+                    size.height * (
+                        0.62
+                        + particle.startY
+                    )
+
+                let targetY =
+                    size.height * 0.48
+
+                let y =
+                    startY
+                    + (targetY - startY)
+                    * CGFloat(eased)
+
+                let drift =
+                    sin(
+                        phase * .pi * 2
+                        + particle.phase
+                    )
+                    * particle.drift
+
+                let x =
+                    size.width * (
+                        0.50
+                        + particle.startX
+                    )
+                    + drift
+
+                // Последние 18% цикла —
+                // визуальное поглощение в логотип.
+                let absorption: Double
+
+                if phase < 0.82 {
+                    absorption = 1
+                } else {
+                    absorption =
+                        max(
+                            0,
+                            1
+                            - (
+                                phase - 0.82
+                            ) / 0.18
+                        )
+                }
+
+                var particleContext = context
+
+                particleContext.opacity =
+                    streamStrength
+                    * absorption
+                    * particle.opacity
+
+                draw(
+                    particle,
+                    at: CGPoint(
+                        x: x,
+                        y: y
+                    ),
+                    context: &particleContext,
+                    time: time
+                )
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func draw(
+        _ particle: PlantParticle,
+        at point: CGPoint,
+        context: inout GraphicsContext,
+        time: TimeInterval
+    ) {
+
+        switch particle.kind {
+
+        case .leaf:
+
+            var path = Path()
+
+            let s = particle.size
+
+            path.move(
+                to: CGPoint(
+                    x: point.x,
+                    y: point.y + s
+                )
+            )
+
+            path.addCurve(
+                to: CGPoint(
+                    x: point.x + s * 0.85,
+                    y: point.y - s * 0.35
+                ),
+                control1: CGPoint(
+                    x: point.x + s * 0.05,
+                    y: point.y + s * 0.20
+                ),
+                control2: CGPoint(
+                    x: point.x + s * 0.70,
+                    y: point.y - s * 0.05
+                )
+            )
+
+            path.addCurve(
+                to: CGPoint(
+                    x: point.x,
+                    y: point.y + s
+                ),
+                control1: CGPoint(
+                    x: point.x + s * 0.45,
+                    y: point.y + s * 0.05
+                ),
+                control2: CGPoint(
+                    x: point.x + s * 0.10,
+                    y: point.y + s * 0.55
+                )
+            )
+
+            path.closeSubpath()
+
+            context.fill(
+                path,
+                with: .color(
+                    particle.color
+                )
+            )
+
+        case .flower:
+
+            let s = particle.size
+
+            var path = Path()
+
+            for i in 0..<5 {
+
+                let angle =
+                    CGFloat(i)
+                    * (.pi * 2 / 5)
+
+                let px =
+                    point.x
+                    + cos(angle) * s * 0.52
+
+                let py =
+                    point.y
+                    + sin(angle) * s * 0.52
+
+                path.addEllipse(
+                    in: CGRect(
+                        x: px - s * 0.22,
+                        y: py - s * 0.22,
+                        width: s * 0.44,
+                        height: s * 0.44
+                    )
+                )
+            }
+
+            path.addEllipse(
+                in: CGRect(
+                    x: point.x - s * 0.18,
+                    y: point.y - s * 0.18,
+                    width: s * 0.36,
+                    height: s * 0.36
+                )
+            )
+
+            context.fill(
+                path,
+                with: .color(
+                    particle.color
+                )
+            )
+
+        case .pollen:
+
+            // Тонкая зелёная нить.
+            // Длина и траектория различаются.
+            let length =
+                particle.size
+                * (
+                    1.8
+                    + 1.4
+                    * (
+                        0.5
+                        + 0.5
+                        * sin(
+                            time * 1.7
+                            + particle.phase
+                        )
+                    )
+                )
+
+            let sway =
+                sin(
+                    time * 1.15
+                    + particle.phase
+                ) * 4.0
+
+            var path = Path()
+
+            path.move(
+                to: CGPoint(
+                    x: point.x,
+                    y: point.y + length
+                )
+            )
+
+            path.addCurve(
+                to: CGPoint(
+                    x: point.x + sway,
+                    y: point.y - length
+                ),
+                control1: CGPoint(
+                    x: point.x - sway * 0.7,
+                    y: point.y + length * 0.35
+                ),
+                control2: CGPoint(
+                    x: point.x + sway * 0.8,
+                    y: point.y - length * 0.35
+                )
+            )
+
+            // Мягкое зелёное мерцание,
+            // без резкого blinking.
+            let shimmer =
+                0.5
+                + 0.5
+                * sin(
+                    time * 2.2
+                    + particle.phase
+                )
+
+            let green =
+                Color(
+                    red: 0.08,
+                    green:
+                        0.52
+                        + 0.28 * shimmer,
+                    blue:
+                        0.18
+                        + 0.12 * shimmer
+                )
+
+            context.stroke(
+                path,
+                with: .color(green),
+                style: StrokeStyle(
+                    lineWidth: 0.65,
+                    lineCap: .round
+                )
+            )
+        }
+    }
+}
+
+// MARK: - Particle model
+//
+// РОВНО 222 частицы:
+// 82 листа
+// 60 цветов
+// 80 зелёных нитей-пыльцы
+//
+// Никаких веток.
+
+private struct PlantParticle {
+
+    enum Kind {
+        case leaf
+        case flower
+        case pollen
+    }
+
+    let kind: Kind
+
+    let startX: CGFloat
+    let startY: CGFloat
+
+    let speed: Double
+    let offset: Double
+    let phase: Double
+    let drift: CGFloat
+
+    let size: CGFloat
+    let opacity: Double
+
+    let color: Color
+
+    static let all: [PlantParticle] = {
+
+        var result: [PlantParticle] = []
+
+        // 82 leaves
+        for i in 0..<82 {
+
+            let seed =
+                Double(
+                    (i * 37 + 11) % 101
+                ) / 101.0
+
+            result.append(
+                PlantParticle(
+                    kind: .leaf,
+                    startX:
+                        CGFloat(seed - 0.5)
+                        * 0.62,
+                    startY:
+                        CGFloat(
+                            (i * 17 % 31)
+                        ) / 100.0,
+                    speed:
+                        0.25
+                        + seed * 1.20,
+                    offset:
+                        seed * 0.97,
+                    phase:
+                        seed * 10.0,
+                    drift:
+                        5
+                        + CGFloat(seed) * 19,
+                    size:
+                        3.8
+                        + CGFloat(seed) * 5.8,
+                    opacity:
+                        0.42
+                        + seed * 0.48,
+                    color:
+                        Color(
+                            red:
+                                0.10
+                                + seed * 0.08,
+                            green:
+                                0.48
+                                + seed * 0.28,
+                            blue:
+                                0.12
+                                + seed * 0.12
+                        )
+                )
+            )
+        }
+
+        // 60 flowers
+        for i in 0..<60 {
+
+            let seed =
+                Double(
+                    (i * 53 + 7) % 97
+                ) / 97.0
+
+            result.append(
+                PlantParticle(
+                    kind: .flower,
+                    startX:
+                        CGFloat(seed - 0.5)
+                        * 0.66,
+                    startY:
+                        CGFloat(
+                            (i * 13 % 27)
+                        ) / 100.0,
+                    speed:
+                        0.30
+                        + seed * 1.30,
+                    offset:
+                        seed * 0.91,
+                    phase:
+                        seed * 8.7,
+                    drift:
+                        6
+                        + CGFloat(seed) * 18,
+                    size:
+                        4.0
+                        + CGFloat(seed) * 5.0,
+                    opacity:
+                        0.45
+                        + seed * 0.45,
+                    color:
+                        Color(
+                            red:
+                                0.68
+                                + seed * 0.26,
+                            green:
+                                0.58
+                                + seed * 0.24,
+                            blue:
+                                0.10
+                                + seed * 0.35
+                        )
+                )
+            )
+        }
+
+        // 80 pollen threads
+        for i in 0..<80 {
+
+            let seed =
+                Double(
+                    (i * 61 + 19) % 103
+                ) / 103.0
+
+            result.append(
+                PlantParticle(
+                    kind: .pollen,
+                    startX:
+                        CGFloat(seed - 0.5)
+                        * 0.72,
+                    startY:
+                        CGFloat(
+                            (i * 19 % 34)
+                        ) / 100.0,
+                    speed:
+                        0.20
+                        + seed * 1.50,
+                    offset:
+                        seed * 0.83,
+                    phase:
+                        seed * 11.0,
+                    drift:
+                        4
+                        + CGFloat(seed) * 20,
+                    size:
+                        4.0
+                        + CGFloat(seed) * 8.0,
+                    opacity:
+                        0.25
+                        + seed * 0.55,
+                    color:
+                        Color(
+                            red: 0.08,
+                            green:
+                                0.55
+                                + seed * 0.25,
+                            blue:
+                                0.16
+                                + seed * 0.12
+                        )
+                )
+            )
+        }
+
+        return result
+    }()
 }
