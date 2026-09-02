@@ -482,13 +482,13 @@ private struct PlantParticleField: View {
     }
 
     private func drawMovingParticle(
-        context: inout GraphicsContext,
+        _ context: inout GraphicsContext,
         particle: PlantParticle,
-        time: Double,
         size: CGSize,
         centerX: CGFloat,
         logoBottomY: CGFloat,
-        concentration: CGFloat
+        concentration: CGFloat,
+        time: Double
     ) {
         // Flowers and pollen are physically carried by a green vertical current.
         // Their main trajectory is always upward; horizontal motion is only a
@@ -533,22 +533,19 @@ private struct PlantParticleField: View {
         switch particle.kind {
         case .flower:
             drawFlower(
-                context: &context,
-                x: x,
-                y: y,
+                &context,
+                particle: particle,
+                at: CGPoint(x: x, y: y),
                 scale: scale,
-                rotation: particle.rotationSpeed * time
-                    + particle.rotationPhase
-                    + sin(time * 0.27 + particle.seed) * 0.35,
-                pink: particle.flowerPink
+                time: time
             )
         case .pollen:
             drawPollen(
-                context: &context,
-                x: x,
-                y: y,
+                &context,
+                particle: particle,
+                at: CGPoint(x: x, y: y),
                 scale: scale,
-                seed: particle.seed
+                time: time
             )
         case .stream:
             break
