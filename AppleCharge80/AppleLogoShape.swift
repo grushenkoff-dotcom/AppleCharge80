@@ -1,74 +1,17 @@
 import SwiftUI
 
-// MARK: - Exact Apple logo geometry
-//
-// Геометрия взята непосредственно из исходного apple-logo.svg:
-// 814 × 1000.
-// Первый subpath = тело Apple.
-// Второй subpath = лист.
-//
-// Никакой собственной перерисовки силуэта здесь нет.
-
-struct AppleLogoShape: Shape {
-
-    func path(in rect: CGRect) -> Path {
-        AppleLogoGeometry.bodyPath(in: rect)
-            .appending(AppleLogoGeometry.leafPath(in: rect))
-    }
-}
-
-// MARK: - Body only
-
+/// Exact geometry reconstructed from the supplied 814×1000 Apple SVG.
+/// The body and leaf remain separate so the leaf can grow independently.
 struct AppleBodyShape: Shape {
-
     func path(in rect: CGRect) -> Path {
-        AppleLogoGeometry.bodyPath(in: rect)
-    }
-}
-
-// MARK: - Leaf only
-
-struct AppleLeafShape: Shape {
-
-    func path(in rect: CGRect) -> Path {
-        AppleLogoGeometry.leafPath(in: rect)
-    }
-}
-
-// MARK: - Exact SVG geometry
-
-private enum AppleLogoGeometry {
-
-    static func bodyPath(in rect: CGRect) -> Path {
-
         let sx = rect.width / 814.0
         let sy = rect.height / 1000.0
 
         func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-            CGPoint(
-                x: rect.minX + x * sx,
-                y: rect.minY + y * sy
-            )
+            CGPoint(x: x * sx, y: y * sy)
         }
 
         var path = Path()
-
-        // Original SVG body:
-        //
-        // M788.1 340.9
-        // c-5.8 4.5-108.2 62.2-108.2 190.5
-        // c0 148.4 130.3 200.9 134.2 202.2
-        // c-.6 3.2-20.7 71.9-68.7 141.9
-        // c-42.8 61.6-87.5 123.1-155.5 123.1
-        // s-85.5-39.5-164-39.5
-        // c-76.5 0-103.7 40.8-165.9 40.8
-        // s-105.6-57-155.5-127
-        // C46.7 790.7 0 663 0 541.8
-        // c0-194.4 126.4-297.5 250.8-297.5
-        // c66.1 0 121.2 43.4 162.7 43.4
-        // c39.5 0 101.1-46 176.3-46
-        // c28.5 0 130.9 2.6 198.3 99.2
-        // z
 
         path.move(to: p(788.1, 340.9))
 
@@ -79,50 +22,50 @@ private enum AppleLogoGeometry {
         )
 
         path.addCurve(
-            to: p(813.3, 733.6),
+            to: p(813.8, 733.6),
             control1: p(679.9, 679.8),
-            control2: p(810.0, 730.3)
+            control2: p(810.0, 730.4)
         )
 
         path.addCurve(
-            to: p(744.6, 875.5),
-            control1: p(812.7, 736.8),
-            control2: p(791.3, 803.6)
+            to: p(745.1, 875.5),
+            control1: p(813.2, 736.8),
+            control2: p(793.1, 803.6)
         )
 
         path.addCurve(
-            to: p(589.1, 998.6),
-            control1: p(701.8, 937.1),
-            control2: p(656.6, 998.6)
+            to: p(589.6, 998.6),
+            control1: p(702.3, 937.1),
+            control2: p(657.1, 998.6)
         )
 
         path.addCurve(
-            to: p(425.1, 959.1),
-            control1: p(503.6, 998.6),
-            control2: p(468.0, 959.1)
+            to: p(425.6, 959.1),
+            control1: p(522.1, 998.6),
+            control2: p(503.6, 959.1)
         )
 
         path.addCurve(
-            to: p(259.2, 999.9),
-            control1: p(348.3, 959.1),
+            to: p(259.7, 999.9),
+            control1: p(349.1, 959.1),
             control2: p(321.4, 999.9)
         )
 
         path.addCurve(
-            to: p(103.7, 872.9),
-            control1: p(41.7, 942.9),
-            control2: p(0.0, 815.9)
+            to: p(104.2, 872.9),
+            control1: p(197.5, 999.9),
+            control2: p(153.6, 942.9)
         )
 
         path.addCurve(
-            to: p(0.0, 541.8),
+            to: p(0, 541.8),
             control1: p(46.7, 790.7),
-            control2: p(0.0, 663.0)
+            control2: p(0, 663.0)
         )
 
         path.addCurve(
             to: p(250.8, 244.3),
-            control1: p(0.0, 347.4),
+            control1: p(0, 347.4),
             control2: p(126.4, 244.3)
         )
 
@@ -140,31 +83,26 @@ private enum AppleLogoGeometry {
 
         path.addCurve(
             to: p(788.1, 340.9),
-            control1: p(618.3, 244.3),
-            control2: p(720.7, 243.0)
+            control1: p(618.3, 241.7),
+            control2: p(760.7, 244.3)
         )
 
         path.closeSubpath()
 
         return path
     }
+}
 
-    static func leafPath(in rect: CGRect) -> Path {
-
+struct AppleLeafShape: Shape {
+    func path(in rect: CGRect) -> Path {
         let sx = rect.width / 814.0
         let sy = rect.height / 1000.0
 
         func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-            CGPoint(
-                x: rect.minX + x * sx,
-                y: rect.minY + y * sy
-            )
+            CGPoint(x: x * sx, y: y * sy)
         }
 
         var path = Path()
-
-        // Exact second SVG subpath.
-        // It starts at 554.1 / 159.4.
 
         path.move(to: p(554.1, 159.4))
 
@@ -175,9 +113,9 @@ private enum AppleLogoGeometry {
         )
 
         path.addCurve(
-            to: p(605.3, 0.0),
-            control1: p(606.6, 5.8),
-            control2: p(606.0, -0.0)
+            to: p(605.3, 0),
+            control1: p(607.2, 13.0),
+            control2: p(606.6, 5.8)
         )
 
         path.addCurve(
@@ -188,26 +126,26 @@ private enum AppleLogoGeometry {
 
         path.addCurve(
             to: p(403.1, 211.3),
-            control1: p(429.6, 108.2),
+            control1: p(429.7, 108.2),
             control2: p(403.1, 159.4)
         )
 
         path.addCurve(
             to: p(405.0, 229.4),
-            control1: p(403.7, 219.1),
-            control2: p(404.4, 227.5)
+            control1: p(403.1, 219.1),
+            control2: p(404.4, 226.9)
         )
 
         path.addCurve(
             to: p(418.6, 230.7),
-            control1: p(408.2, 230.7),
-            control2: p(413.4, 231.3)
+            control1: p(408.2, 230.0),
+            control2: p(413.4, 230.7)
         )
 
         path.addCurve(
             to: p(554.1, 159.4),
-            control1: p(520.1, 200.3),
-            control2: p(577.1, 169.9)
+            control1: p(464.0, 230.7),
+            control2: p(521.1, 200.3)
         )
 
         path.closeSubpath()
@@ -216,6 +154,13 @@ private enum AppleLogoGeometry {
     }
 }
 
-// MARK: - Compatibility names
+struct AppleLogoShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = AppleBodyShape().path(in: rect)
+        path.addPath(AppleLeafShape().path(in: rect))
+        return path
+    }
+}
 
+// Compatibility alias for older project references.
 typealias LeafShape = AppleLeafShape
