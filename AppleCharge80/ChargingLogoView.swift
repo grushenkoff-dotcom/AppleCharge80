@@ -11,7 +11,7 @@ struct ChargingLogoView: View {
     private let sectorCount = 6
     private let disconnectTotal: TimeInterval = 3.0
     private let sectorDuration: TimeInterval = 0.6
-    private let sectorStartStep: TimeInterval = 0.48 // next starts when previous is 80% gone
+    private let sectorStartStep: TimeInterval = 0.48
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: false)) { context in
@@ -22,6 +22,16 @@ struct ChargingLogoView: View {
 
             GeometryReader { geo in
                 ZStack {
+                    // The living stream is deliberately behind the logo.
+                    PlantParticleField(
+                        progress: clampedProgress,
+                        time: now.timeIntervalSinceReferenceDate,
+                        active: isCharging && disconnectElapsed == nil,
+                        logoWidth: logoWidth,
+                        logoHeight: logoHeight
+                    )
+                    .frame(width: geo.size.width, height: geo.size.height)
+
                     AppleLogoFill(
                         progress: clampedProgress,
                         time: now.timeIntervalSinceReferenceDate,
@@ -33,15 +43,6 @@ struct ChargingLogoView: View {
                         disconnectTotal: disconnectTotal
                     )
                     .frame(width: logoWidth, height: logoHeight)
-
-                    PlantParticleField(
-                        progress: clampedProgress,
-                        time: now.timeIntervalSinceReferenceDate,
-                        active: isCharging && disconnectElapsed == nil,
-                        logoWidth: logoWidth,
-                        logoHeight: logoHeight
-                    )
-                    .frame(width: geo.size.width, height: geo.size.height)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -137,9 +138,7 @@ private struct AppleLogoFill: View {
                                     amplitude: min(5.5, max(1.4, bandHeight * 0.11)),
                                     phase: time * 0.75 + Double(index) * 1.37
                                 )
-                                .fill(
-                                    sectorGradient(base: base, shimmer: shimmer)
-                                )
+                                .fill(sectorGradient(base: base, shimmer: shimmer))
                             } else {
                                 Rectangle()
                                     .fill(sectorGradient(base: base, shimmer: shimmer))
@@ -216,7 +215,7 @@ private struct AppleLogoFill: View {
 
     private var stemOpacity: Double {
         let p = leafProgress
-        return min(1.0, p / 0.20) * max(0, min(1, (1.0 - p) / 0.04))
+        return min(1.0, p / 0.20) * max(0, min(1.0, (1.0 - p) / 0.04))
     }
 
     private func sectorOpacity(_ index: Int) -> Double {
@@ -243,8 +242,7 @@ private struct AppleLogoFill: View {
     }
 }
 
-// Only the top edge of the sector moves.
-// The other three edges remain perfectly straight.
+// Only the top edge of the current sector moves.
 private struct WavingSectorTop: Shape {
     let width: CGFloat
     let height: CGFloat
@@ -259,56 +257,24 @@ private struct WavingSectorTop: Shape {
         let x1 = rect.maxX
         let third = rect.width / 3.0
 
-        path.move(
-            to: CGPoint(
-                x: x0,
-                y: y + CGFloat(sin(phase)) * a * 0.35
-            )
+        path.move(to: CGPoint(x: x0, y: y + CGFloat(sin(phase)) * a * 0.35))
+
+        path.addCurve(
+            to: CGPoint(x: x0 + third, y: y + CGFloat(sin(phase + 1.9)) * a),
+            control1: CGPoint(x: x0 + third * 0.28, y: y + CGFloat(sin(phase + 0.7)) * a * 0.55),
+            control2: CGPoint(x: x0 + third * 0.72, y: y + CGFloat(sin(phase + 1.35)) * a * 1.15)
         )
 
         path.addCurve(
-            to: CGPoint(
-                x: x0 + third,
-                y: y + CGFloat(sin(phase + 1.9)) * a
-            ),
-            control1: CGPoint(
-                x: x0 + third * 0.28,
-                y: y + CGFloat(sin(phase + 0.7)) * a * 0.55
-            ),
-            control2: CGPoint(
-                x: x0 + third * 0.72,
-                y: y + CGFloat(sin(phase + 1.35)) * a * 1.15
-            )
+            to: CGPoint(x: x0 + third * 2, y: y + CGFloat(sin(phase + 3.2)) * a * 0.72),
+            control1: CGPoint(x: x0 + third * 1.28, y: y + CGFloat(sin(phase + 2.35)) * a * 1.05),
+            control2: CGPoint(x: x0 + third * 1.72, y: y + CGFloat(sin(phase + 2.8)) * a * 0.35)
         )
 
         path.addCurve(
-            to: CGPoint(
-                x: x0 + third * 2,
-                y: y + CGFloat(sin(phase + 3.2)) * a * 0.72
-            ),
-            control1: CGPoint(
-                x: x0 + third * 1.28,
-                y: y + CGFloat(sin(phase + 2.35)) * a * 1.05
-            ),
-            control2: CGPoint(
-                x: x0 + third * 1.72,
-                y: y + CGFloat(sin(phase + 2.8)) * a * 0.35
-            )
-        )
-
-        path.addCurve(
-            to: CGPoint(
-                x: x1,
-                y: y + CGFloat(sin(phase + 4.8)) * a * 0.35
-            ),
-            control1: CGPoint(
-                x: x0 + third * 2.28,
-                y: y + CGFloat(sin(phase + 3.8)) * a * 0.90
-            ),
-            control2: CGPoint(
-                x: x0 + third * 2.70,
-                y: y + CGFloat(sin(phase + 4.35)) * a * 0.55
-            )
+            to: CGPoint(x: x1, y: y + CGFloat(sin(phase + 4.8)) * a * 0.35),
+            control1: CGPoint(x: x0 + third * 2.28, y: y + CGFloat(sin(phase + 3.8)) * a * 0.90),
+            control2: CGPoint(x: x0 + third * 2.70, y: y + CGFloat(sin(phase + 4.35)) * a * 0.55)
         )
 
         path.addLine(to: CGPoint(x: x1, y: rect.maxY))
@@ -333,28 +299,19 @@ private struct LeafBudStem: View {
                 path.move(to: CGPoint(x: x, y: baseY))
                 path.addCurve(
                     to: CGPoint(x: x + w * 0.025, y: topY),
-                    control1: CGPoint(
-                        x: x - w * 0.01,
-                        y: baseY - h * 0.018
-                    ),
-                    control2: CGPoint(
-                        x: x + w * 0.018,
-                        y: topY + h * 0.012
-                    )
+                    control1: CGPoint(x: x - w * 0.01, y: baseY - h * 0.018),
+                    control2: CGPoint(x: x + w * 0.018, y: topY + h * 0.012)
                 )
             }
             .stroke(
                 Color(red: 0.42, green: 0.78, blue: 0.12),
-                style: StrokeStyle(
-                    lineWidth: max(1.0, w * 0.018),
-                    lineCap: .round
-                )
+                style: StrokeStyle(lineWidth: max(1.0, w * 0.018), lineCap: .round)
             )
         }
     }
 }
 
-// MARK: - Living plant stream
+// MARK: - Vertical living plant stream
 
 private struct PlantParticleField: View {
     let progress: Double
@@ -363,208 +320,240 @@ private struct PlantParticleField: View {
     let logoWidth: CGFloat
     let logoHeight: CGFloat
 
-    // Green currents + pollen + white/pink apple blossoms.
     private let particles: [PlantParticle] = PlantParticle.make222()
 
     var body: some View {
         Canvas { context, size in
             guard active && progress > 0.0 && progress < 1.0 else { return }
 
-            // The stream exists below the logo. Its destination is exactly
-            // the lower edge of the logo, never above it.
-            let logoBottomY = size.height / 2.0 + logoHeight / 2.0
-            let centerX = size.width / 2.0
+            let centerX = size.width * 0.5
+            let logoBottomY = size.height * 0.5 + logoHeight * 0.5
 
-            // The stream becomes increasingly concentrated toward the logo
-            // during the last 8% of filling.
-            let concentration = progress >= 0.92
-                ? max(0.35, (1.0 - progress) / 0.08)
+            let concentration: CGFloat =
+                progress >= 0.92
+                ? CGFloat(max(0.18, (1.0 - progress) / 0.08))
                 : 1.0
 
-            for particle in particles {
-                let cycle = particle.kind == .stream ? 4.8 : 4.2
-                let raw = (time / cycle + particle.phase)
-                    .truncatingRemainder(dividingBy: 1.0)
-                let t = raw < 0 ? raw + 1.0 : raw
-
-                // Smooth upward flow.
-                let eased = t * t * (3.0 - 2.0 * t)
-
-                let startX = centerX
-                    + particle.startX * size.width * 0.24
-                let startY = size.height
-                    * particle.startY
-
-                // Targets sit just BELOW the physical logo boundary.
-                // The final absorption happens over the last part of the path.
-                let targetX = centerX
-                    + particle.targetX * logoWidth * 0.34
-                let targetY = logoBottomY - 0.8
-
-                let currentX = startX
-                    + (targetX - startX) * eased
-
-                let streamSway = CGFloat(
-                    sin(
-                        time * particle.flowSpeed
-                        + particle.seed
-                        + Double(t) * .pi * 2.0
-                    )
+            for particle in particles where particle.kind == .stream {
+                drawVerticalCurrent(
+                    &context,
+                    particle: particle,
+                    size: size,
+                    centerX: centerX,
+                    logoBottomY: logoBottomY,
+                    concentration: concentration,
+                    time: time
                 )
+            }
 
-                let x = currentX
-                    + streamSway * particle.drift * concentration
-
-                let y = startY
-                    + (targetY - startY) * eased
-
-                // Last part of the path is an absorption zone:
-                // particles shrink/fade into the lower edge and never cross it.
-                let absorbStart = 0.84
-                let absorbT = t > absorbStart
-                    ? min(1.0, (t - absorbStart) / 0.16)
-                    : 0.0
-                let absorbEase = absorbT * absorbT * (3.0 - 2.0 * absorbT)
-
-                let edgePull = absorbEase * absorbEase
-                let pulledX = x + (targetX - x) * edgePull
-                let safeY = min(
-                    logoBottomY - 0.35,
-                    y + max(0, targetY - y) * edgePull
+            for particle in particles where particle.kind != .stream {
+                drawMovingParticle(
+                    &context,
+                    particle: particle,
+                    size: size,
+                    centerX: centerX,
+                    logoBottomY: logoBottomY,
+                    concentration: concentration,
+                    time: time
                 )
-
-                let flicker = 0.72
-                    + 0.28 * sin(
-                        time * particle.flickerSpeed
-                        + particle.seed * 1.7
-                    )
-
-                let alpha = particle.opacity
-                    * flicker
-                    * max(0.0, 1.0 - absorbEase)
-
-                let scale = particle.scale
-                    * max(0.035, 1.0 - absorbEase * 0.90)
-
-                guard alpha > 0.002 else { continue }
-
-                context.opacity = alpha
-
-                switch particle.kind {
-                case .stream:
-                    drawGreenCurrent(
-                        &context,
-                        particle: particle,
-                        at: CGPoint(x: pulledX, y: safeY),
-                        scale: scale,
-                        time: time,
-                        size: size
-                    )
-
-                case .flower:
-                    drawFlower(
-                        &context,
-                        particle: particle,
-                        at: CGPoint(x: pulledX, y: safeY),
-                        scale: scale,
-                        time: time
-                    )
-
-                case .pollen:
-                    drawPollen(
-                        &context,
-                        particle: particle,
-                        at: CGPoint(x: pulledX, y: safeY),
-                        scale: scale,
-                        time: time
-                    )
-                }
             }
         }
         .allowsHitTesting(false)
     }
 
-    private func drawGreenCurrent(
+    private func drawVerticalCurrent(
         _ context: inout GraphicsContext,
         particle: PlantParticle,
-        at point: CGPoint,
-        scale: CGFloat,
-        time: TimeInterval,
-        size: CGSize
+        size: CGSize,
+        centerX: CGFloat,
+        logoBottomY: CGFloat,
+        concentration: CGFloat,
+        time: TimeInterval
     ) {
-        var current = Path()
-        current.move(to: CGPoint(
-            x: point.x - particle.length * 0.48 * scale,
-            y: point.y + particle.length * 0.22 * scale
-        ))
+        let cycle = 5.4
+        let raw = (time / cycle + particle.phase).truncatingRemainder(dividingBy: 1.0)
+        let t = raw < 0 ? raw + 1.0 : raw
+        let eased = t * t * (3.0 - 2.0 * t)
 
-        let bend = CGFloat(
-            sin(time * 0.75 + particle.seed) * 7.0
+        let baseX = centerX + particle.startX * size.width * 0.20 * concentration
+        let targetX = centerX + particle.targetX * logoWidth * 0.28 * concentration
+
+        let horizontalWave = sin(
+            time * particle.flowSpeed +
+            particle.seed +
+            t * .pi * 2.0
         )
 
-        current.addCurve(
+        let xProgress = baseX + (targetX - baseX) * eased
+        let x = xProgress + horizontalWave * particle.drift * concentration
+
+        let bottomY = size.height + 35.0
+        let topY = logoBottomY - 1.5
+        let y = bottomY + (topY - bottomY) * eased
+
+        let absorbStart = 0.84
+        let absorb = t > absorbStart
+            ? min(1.0, (t - absorbStart) / (1.0 - absorbStart))
+            : 0.0
+        let absorbEase = absorb * absorb * (3.0 - 2.0 * absorb)
+
+        let finalX = x + (targetX - x) * absorbEase
+        let finalY = y + (topY - y) * absorbEase
+
+        let flicker = 0.70 + 0.30 * sin(
+            time * particle.flickerSpeed + particle.seed
+        )
+
+        let alpha = particle.opacity * flicker * max(0.0, 1.0 - absorbEase)
+        guard alpha > 0.003 else { return }
+
+        let ribbonLength = particle.length * (
+            0.90 + 0.10 * sin(time * 0.55 + particle.seed)
+        )
+
+        let width = max(0.7, 1.35 * particle.scale)
+
+        var ribbon = Path()
+        ribbon.move(to: CGPoint(
+            x: finalX,
+            y: finalY + ribbonLength * 0.55
+        ))
+
+        ribbon.addCurve(
             to: CGPoint(
-                x: point.x + particle.length * 0.50 * scale,
-                y: point.y - particle.length * 0.78 * scale
+                x: finalX,
+                y: finalY - ribbonLength * 0.45
             ),
             control1: CGPoint(
-                x: point.x - particle.length * 0.25 * scale + bend,
-                y: point.y - particle.length * 0.18 * scale
+                x: finalX + CGFloat(sin(time * 0.65 + particle.seed)) * 7.0 * concentration,
+                y: finalY + ribbonLength * 0.15
             ),
             control2: CGPoint(
-                x: point.x + particle.length * 0.30 * scale - bend * 0.5,
-                y: point.y - particle.length * 0.52 * scale
+                x: finalX - CGFloat(sin(time * 0.48 + particle.seed * 1.7)) * 6.0 * concentration,
+                y: finalY - ribbonLength * 0.15
             )
         )
 
-        let glow = 0.72
-            + 0.28 * sin(time * 1.4 + particle.seed)
-
+        context.opacity = alpha
         context.stroke(
-            current,
+            ribbon,
             with: .color(
                 Color(
                     red: 0.20,
-                    green: min(1.0, 0.70 + 0.18 * glow),
-                    blue: 0.16
+                    green: min(1.0, 0.78 + 0.12 * flicker),
+                    blue: 0.20
                 )
             ),
             style: StrokeStyle(
-                lineWidth: max(0.65, 1.25 * scale),
+                lineWidth: width,
                 lineCap: .round
             )
         )
 
-        // A second, dimmer filament gives the current a soft living depth.
         var filament = Path()
         filament.move(to: CGPoint(
-            x: point.x + particle.length * 0.18 * scale,
-            y: point.y + particle.length * 0.30 * scale
+            x: finalX + 2.5 * particle.scale,
+            y: finalY + ribbonLength * 0.48
         ))
         filament.addCurve(
             to: CGPoint(
-                x: point.x - particle.length * 0.12 * scale,
-                y: point.y - particle.length * 0.62 * scale
+                x: finalX - 2.0 * particle.scale,
+                y: finalY - ribbonLength * 0.42
             ),
             control1: CGPoint(
-                x: point.x + particle.length * 0.40 * scale,
-                y: point.y - particle.length * 0.05 * scale
+                x: finalX + 5.0 * particle.scale,
+                y: finalY + ribbonLength * 0.12
             ),
             control2: CGPoint(
-                x: point.x - particle.length * 0.38 * scale,
-                y: point.y - particle.length * 0.35 * scale
+                x: finalX - 5.0 * particle.scale,
+                y: finalY - ribbonLength * 0.15
             )
         )
 
-        context.opacity *= 0.38
+        context.opacity = alpha * 0.32
         context.stroke(
             filament,
-            with: .color(Color(red: 0.36, green: 0.92, blue: 0.28)),
+            with: .color(Color(red: 0.38, green: 0.95, blue: 0.30)),
             style: StrokeStyle(
-                lineWidth: max(0.4, 0.72 * scale),
+                lineWidth: max(0.45, width * 0.52),
                 lineCap: .round
             )
         )
+    }
+
+    private func drawMovingParticle(
+        _ context: inout GraphicsContext,
+        particle: PlantParticle,
+        size: CGSize,
+        centerX: CGFloat,
+        logoBottomY: CGFloat,
+        concentration: CGFloat,
+        time: TimeInterval
+    ) {
+        let cycle: Double = particle.kind == .flower ? 4.8 : 4.2
+        let raw = (time / cycle + particle.phase).truncatingRemainder(dividingBy: 1.0)
+        let t = raw < 0 ? raw + 1.0 : raw
+        let eased = t * t * (3.0 - 2.0 * t)
+
+        let startY = size.height + 45.0
+        let targetY = logoBottomY - 1.0
+
+        let startX = centerX + particle.startX * size.width * 0.22 * concentration
+        let targetX = centerX + particle.targetX * logoWidth * 0.30 * concentration
+
+        var x = startX + (targetX - startX) * eased
+        var y = startY + (targetY - startY) * eased
+
+        let sway = sin(
+            time * particle.flowSpeed +
+            particle.seed +
+            t * .pi * 2.0
+        )
+
+        x += sway * particle.drift * concentration
+
+        let absorbStart = 0.84
+        let absorb = t > absorbStart
+            ? min(1.0, (t - absorbStart) / (1.0 - absorbStart))
+            : 0.0
+        let absorbEase = absorb * absorb * (3.0 - 2.0 * absorb)
+
+        x += (targetX - x) * absorbEase
+        y += (targetY - y) * absorbEase
+        y = min(targetY, y)
+
+        let flicker = 0.70 + 0.30 * sin(
+            time * particle.flickerSpeed +
+            particle.seed * 1.7
+        )
+
+        let alpha = particle.opacity * flicker * max(0.0, 1.0 - absorbEase)
+        guard alpha > 0.002 else { return }
+
+        let scale = particle.scale * max(0.04, 1.0 - absorbEase * 0.92)
+
+        context.opacity = alpha
+
+        switch particle.kind {
+        case .flower:
+            drawFlower(
+                &context,
+                particle: particle,
+                at: CGPoint(x: x, y: y),
+                scale: scale,
+                time: time
+            )
+        case .pollen:
+            drawPollen(
+                &context,
+                particle: particle,
+                at: CGPoint(x: x, y: y),
+                scale: scale,
+                time: time
+            )
+        case .stream:
+            break
+        }
     }
 
     private func drawPollen(
@@ -574,47 +563,37 @@ private struct PlantParticleField: View {
         scale: CGFloat,
         time: TimeInterval
     ) {
-        let pulse = 0.70
-            + 0.30 * sin(
-                time * particle.flickerSpeed
-                + particle.seed
-            )
-
-        let r = max(0.55, 1.35 * scale * pulse)
-
-        let glowRect = CGRect(
-            x: point.x - r * 1.8,
-            y: point.y - r * 1.8,
-            width: r * 3.6,
-            height: r * 3.6
+        let pulse = 0.65 + 0.35 * sin(
+            time * particle.flickerSpeed + particle.seed
         )
+
+        let radius = max(0.45, 1.25 * scale * pulse)
+        let outerRadius = radius * 2.1
+
+        context.opacity *= 0.22
         context.fill(
-            Path(ellipseIn: glowRect),
-            with: .color(
-                Color(
-                    red: 0.44,
-                    green: 0.96,
-                    blue: 0.38
+            Path(
+                ellipseIn: CGRect(
+                    x: point.x - outerRadius,
+                    y: point.y - outerRadius,
+                    width: outerRadius * 2.0,
+                    height: outerRadius * 2.0
                 )
-            )
+            ),
+            with: .color(Color(red: 0.30, green: 0.92, blue: 0.25))
         )
 
-        let coreRect = CGRect(
-            x: point.x - r * 0.55,
-            y: point.y - r * 0.55,
-            width: r * 1.1,
-            height: r * 1.1
-        )
-        context.opacity *= 0.92
+        context.opacity *= 3.8
         context.fill(
-            Path(ellipseIn: coreRect),
-            with: .color(
-                Color(
-                    red: 0.72,
-                    green: 1.0,
-                    blue: 0.58
+            Path(
+                ellipseIn: CGRect(
+                    x: point.x - radius,
+                    y: point.y - radius,
+                    width: radius * 2.0,
+                    height: radius * 2.0
                 )
-            )
+            ),
+            with: .color(Color(red: 0.60, green: 1.0, blue: 0.42))
         )
     }
 
@@ -625,15 +604,14 @@ private struct PlantParticleField: View {
         scale: CGFloat,
         time: TimeInterval
     ) {
-        // Slow, deliberately irregular rotation.
         let angle = CGFloat(
-            time * particle.rotationSpeed
-            + particle.seed
-            + sin(time * 0.31 + particle.seed * 0.7) * 0.42
+            time * particle.rotationSpeed +
+            particle.rotationPhase +
+            sin(time * 0.27 + particle.seed) * 0.35
         )
 
-        let petalRadius = max(1.15, 3.1 * scale)
-        let flowerRadius = petalRadius * 1.55
+        let petalRadius = max(1.15, 3.0 * scale)
+        let flowerRadius = petalRadius * 1.45
 
         var flower = Path()
 
@@ -644,17 +622,18 @@ private struct PlantParticleField: View {
             let cx = point.x + cos(a) * flowerRadius
             let cy = point.y + sin(a) * flowerRadius
 
-            let petal = CGRect(
-                x: cx - petalRadius,
-                y: cy - petalRadius * 0.82,
-                width: petalRadius * 2.0,
-                height: petalRadius * 1.64
+            flower.addEllipse(
+                in: CGRect(
+                    x: cx - petalRadius,
+                    y: cy - petalRadius * 0.82,
+                    width: petalRadius * 2.0,
+                    height: petalRadius * 1.64
+                )
             )
-
-            flower.addEllipse(in: petal)
         }
 
-        let centerRadius = petalRadius * 0.72
+        let centerRadius = petalRadius * 0.70
+
         flower.addEllipse(
             in: CGRect(
                 x: point.x - centerRadius,
@@ -664,10 +643,8 @@ private struct PlantParticleField: View {
             )
         )
 
-        // White and pink blossoms; no yellow flowers.
-        let pink = particle.flowerPink
-        let flowerColor = pink
-            ? Color(red: 1.0, green: 0.60, blue: 0.74)
+        let flowerColor: Color = particle.flowerPink
+            ? Color(red: 1.0, green: 0.58, blue: 0.72)
             : Color(red: 1.0, green: 0.96, blue: 0.98)
 
         context.fill(flower, with: .color(flowerColor))
@@ -683,7 +660,7 @@ private struct PlantParticleField: View {
         context.fill(
             Path(ellipseIn: center),
             with: .color(
-                pink
+                particle.flowerPink
                     ? Color(red: 0.98, green: 0.76, blue: 0.30)
                     : Color(red: 1.0, green: 0.82, blue: 0.46)
             )
@@ -701,7 +678,6 @@ private struct PlantParticle {
     let kind: Kind
     let phase: Double
     let startX: CGFloat
-    let startY: CGFloat
     let targetX: CGFloat
     let drift: CGFloat
     let opacity: Double
@@ -711,73 +687,71 @@ private struct PlantParticle {
     let flowSpeed: Double
     let flickerSpeed: Double
     let rotationSpeed: Double
+    let rotationPhase: Double
     let flowerPink: Bool
 
     static func make222() -> [PlantParticle] {
         var result: [PlantParticle] = []
         result.reserveCapacity(222)
 
-        // 42 soft green currents.
         for i in 0..<42 {
             result.append(
                 PlantParticle(
                     kind: .stream,
                     phase: fract(Double(i) * 0.6180339887),
                     startX: signedUnit(i * 17 + 3),
-                    startY: 0.61 + fract(Double(i) * 0.173) * 0.25,
-                    targetX: signedUnit(i * 11 + 7) * 0.82,
-                    drift: CGFloat(3.0 + Double(i % 6)),
-                    opacity: 0.16 + Double(i % 7) * 0.022,
+                    targetX: signedUnit(i * 11 + 7) * 0.80,
+                    drift: CGFloat(3.0 + Double(i % 7)),
+                    opacity: 0.15 + Double(i % 7) * 0.022,
                     scale: CGFloat(0.75 + Double(i % 5) * 0.10),
-                    length: CGFloat(12 + i % 15),
+                    length: CGFloat(24 + i % 22),
                     seed: Double(i) * 1.17,
-                    flowSpeed: 0.48 + Double(i % 5) * 0.06,
-                    flickerSpeed: 1.15 + Double(i % 4) * 0.18,
+                    flowSpeed: 0.42 + Double(i % 5) * 0.055,
+                    flickerSpeed: 1.0 + Double(i % 4) * 0.18,
                     rotationSpeed: 0,
+                    rotationPhase: 0,
                     flowerPink: false
                 )
             )
         }
 
-        // 70 white/pink apple blossoms.
         for i in 0..<70 {
             result.append(
                 PlantParticle(
                     kind: .flower,
                     phase: fract(0.31 + Double(i) * 0.754877666),
                     startX: signedUnit(i * 23 + 5),
-                    startY: 0.66 + fract(Double(i) * 0.211) * 0.18,
-                    targetX: signedUnit(i * 13 + 2) * 0.84,
+                    targetX: signedUnit(i * 13 + 2) * 0.82,
                     drift: CGFloat(2.0 + Double(i % 6)),
-                    opacity: 0.28 + Double(i % 7) * 0.035,
+                    opacity: 0.25 + Double(i % 7) * 0.035,
                     scale: CGFloat(0.46 + Double(i % 5) * 0.13),
                     length: 0,
                     seed: Double(i) * 1.83 + 9,
-                    flowSpeed: 0.52 + Double(i % 5) * 0.055,
-                    flickerSpeed: 0.65 + Double(i % 4) * 0.12,
-                    rotationSpeed: 0.16 + Double(i % 7) * 0.025,
+                    flowSpeed: 0.48 + Double(i % 5) * 0.055,
+                    flickerSpeed: 0.60 + Double(i % 4) * 0.12,
+                    rotationSpeed: 0.12 + Double(i % 7) * 0.025,
+                    rotationPhase: Double(i % 11) * 0.57,
                     flowerPink: i % 3 != 0
                 )
             )
         }
 
-        // 110 fine green pollen motes.
         for i in 0..<110 {
             result.append(
                 PlantParticle(
                     kind: .pollen,
                     phase: fract(0.17 + Double(i) * 0.4142135623),
                     startX: signedUnit(i * 29 + 1),
-                    startY: 0.59 + fract(Double(i) * 0.139) * 0.29,
-                    targetX: signedUnit(i * 19 + 4) * 0.88,
-                    drift: CGFloat(2.0 + Double(i % 5)),
-                    opacity: 0.14 + Double(i % 6) * 0.035,
-                    scale: CGFloat(0.50 + Double(i % 4) * 0.14),
+                    targetX: signedUnit(i * 19 + 4) * 0.86,
+                    drift: CGFloat(2.0 + Double(i % 6)),
+                    opacity: 0.13 + Double(i % 6) * 0.035,
+                    scale: CGFloat(0.45 + Double(i % 5) * 0.14),
                     length: 0,
                     seed: Double(i) * 2.31 + 17,
-                    flowSpeed: 0.72 + Double(i % 5) * 0.08,
-                    flickerSpeed: 1.7 + Double(i % 6) * 0.22,
+                    flowSpeed: 0.65 + Double(i % 5) * 0.08,
+                    flickerSpeed: 1.6 + Double(i % 6) * 0.22,
                     rotationSpeed: 0,
+                    rotationPhase: 0,
                     flowerPink: false
                 )
             )
