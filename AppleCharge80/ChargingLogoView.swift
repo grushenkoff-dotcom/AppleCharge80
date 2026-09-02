@@ -7,6 +7,7 @@ struct ChargingLogoView: View {
 
     @State private var disconnectStart: Date?
     @State private var disconnectOrder: [Int] = []
+    @State private var animatedProgress: Double = 0
 
     private let sectorCount = 6
     private let disconnectTotal: TimeInterval = 3.0
@@ -19,20 +20,17 @@ struct ChargingLogoView: View {
         ) { context in
 
             let now = context.date
-
-            let disconnectElapsed: TimeInterval? =
-                disconnectStart.map {
-                    now.timeIntervalSince($0)
-                }
+            let disconnectElapsed = disconnectStart.map {
+                now.timeIntervalSince($0)
+            }
 
             let logoHeight: CGFloat = 181.0
-            let logoWidth: CGFloat = logoHeight * 814.0 / 1000.0
+            let logoWidth = logoHeight * 814.0 / 1000.0
 
             GeometryReader { geo in
                 ZStack {
-
                     AppleLogoFill(
-                        progress: clampedProgress,
+                        progress: animatedProgress,
                         time: now.timeIntervalSinceReferenceDate,
                         disconnectElapsed: disconnectElapsed,
                         disconnectOrder: disconnectOrder,
@@ -47,7 +45,7 @@ struct ChargingLogoView: View {
                     )
 
                     PlantParticleField(
-                        progress: clampedProgress,
+                        progress: animatedProgress,
                         time: now.timeIntervalSinceReferenceDate,
                         active: isCharging && disconnectElapsed == nil,
                         logoWidth: logoWidth,
@@ -64,15 +62,24 @@ struct ChargingLogoView: View {
                 )
             }
             .onAppear {
-                if !isCharging && disconnectStart == nil {
+                animatedProgress = 0
+
+                if isCharging {
+                    animateProgressTowardBatteryLevel()
+                } else if disconnectStart == nil {
                     beginDisconnect(at: now)
                 }
             }
+            .onChange(of: progress) { _, _ in
+                if isCharging && disconnectStart == nil {
+                    animateProgressTowardBatteryLevel()
+                }
+            }
             .onChange(of: isCharging) { _, charging in
-
                 if charging {
                     disconnectStart = nil
                     disconnectOrder = []
+                    animateProgressTowardBatteryLevel()
                 } else if disconnectStart == nil {
                     beginDisconnect(at: now)
                 }
@@ -82,80 +89,130 @@ struct ChargingLogoView: View {
         .ignoresSafeArea()
     }
 
-    private var clampedProgress: Double {
-        min(
+    // MARK: - Progress
+
+    private var normalizedProgress: Double {
+        let raw = progress
+
+        // Supports both:
+        // 0.00 ... 1.00
+        // and
+        // 0 ... 100
+        let value = raw > 1.0 ? raw / 100.0 : raw
+
+        return min(
             1.0,
-            max(
-                0.0,
-                progress
-            )
+            max(0.0, value)
         )
     }
 
+    private func animateProgressTowardBatteryLevel() {
+        let target = normalizedProgress
+        let distance = abs(target - animatedProgress)
+
+        let duration = min(
+            8.0,
+            max(
+                0.35,
+                distance * 4.0
+            )
+        )
+
+        withAnimation(
+            .easeInOut(duration: duration)
+        ) {
+            animatedProgress = target
+        }
+    }
+
+    // MARK: - Disconnect
+
     private func beginDisconnect(at date: Date) {
-        disconnectOrder = Array(0..<sectorCount).shuffled()
+        disconnectOrder = Array(
+            0..<sectorCount
+        ).shuffled()
+
         disconnectStart = date
     }
 }
 
-// MARK: - Apple logo fill
+// MARK: - Apple Logo Fill
 
 private struct AppleLogoFill: View {
-
     let progress: Double
     let time: TimeInterval
     let disconnectElapsed: TimeInterval?
     let disconnectOrder: [Int]
-
     let sectorCount: Int
     let sectorDuration: TimeInterval
     let sectorStartStep: TimeInterval
     let disconnectTotal: TimeInterval
 
+    // Classic 1980s Apple rainbow.
+    // Bottom -> top.
     private let colors: [Color] = [
         Color(
-            red: 0.05,
-            green: 0.42,
-            blue: 0.95
-        ),
-        Color(
-            red: 0.39,
-            green: 0.18,
-            blue: 0.78
-        ),
-        Color(
-            red: 0.82,
-            green: 0.05,
-            blue: 0.35
-        ),
-        Color(
-            red: 0.98,
-            green: 0.22,
-            blue: 0.10
-        ),
-        Color(
-            red: 1.00,
-            green: 0.52,
-            blue: 0.05
-        ),
+            red: 0.12,
+            green: 0.36,
+            blue: 0.86
+        ), // blue
+
         Color(
             red: 0.42,
+            green: 0.22,
+            blue: 0.72
+        ), // purple
+
+        Color(
+            red: 0.88,
+            green: 0.12,
+            blue: 0.16
+        ), // red
+
+        Color(
+            red: 0.98,
+            green: 0.42,
+            blue: 0.08
+        ), // orange
+
+        Color(
+            red: 0.98,
             green: 0.78,
-            blue: 0.12
-        )
+            blue: 0.08
+        ), // yellow
+
+        Color(
+            red: 0.22,
+            green: 0.68,
+            blue: 0.20
+        )  // green
     ]
 
     var body: some View {
         GeometryReader { geo in
 
-            let bodyTop = geo.size.height * 0.2443
-            let bodyBottom = geo.size.height * 0.9999
-            let bodyHeight = bodyBottom - bodyTop
+            let bodyTop =
+                geo.size.height * 0.2443
+
+            let bodyBottom =
+                geo.size.height * 0.9999
+
+            let bodyHeight =
+                bodyBottom - bodyTop
+
             let bandHeight =
                 bodyHeight / CGFloat(sectorCount)
 
+            // Body reaches 100% of its six sectors
+            // at 88% battery.
+            let bodyProgress =
+                min(
+                    1.0,
+                    progress / 0.88
+                )
+
             let scaled =
-                progress * Double(sectorCount)
+                bodyProgress * Double(sectorCount)
 
             let completed =
                 min(
@@ -164,9 +221,16 @@ private struct AppleLogoFill: View {
                 )
 
             let currentFraction =
-                scaled - Double(completed)
+                min(
+                    1.0,
+                    max(
+                        0.0,
+                        scaled - Double(completed)
+                    )
+                )
 
-            let leafGrowth = leafProgress
+            let leafGrowth =
+                leafProgress
 
             ZStack(alignment: .topLeading) {
 
@@ -199,7 +263,8 @@ private struct AppleLogoFill: View {
 
                         let bottomY =
                             bodyBottom
-                            - CGFloat(index) * bandHeight
+                            - CGFloat(index)
+                            * bandHeight
 
                         let fillHeight =
                             max(
@@ -224,7 +289,8 @@ private struct AppleLogoFill: View {
                                 time
                                 * (
                                     0.55
-                                    + Double(index) * 0.035
+                                    + Double(index)
+                                    * 0.035
                                 )
                                 + Double(index) * 1.37
                         )
@@ -268,8 +334,9 @@ private struct AppleLogoFill: View {
         }
     }
 
-    private var leafProgress: Double {
+    // MARK: - Leaf
 
+    private var leafProgress: Double {
         let normal =
             max(
                 0,
@@ -295,21 +362,27 @@ private struct AppleLogoFill: View {
     }
 
     private var stemOpacity: Double {
-
         let p = leafProgress
 
-        return min(
-            1.0,
-            p / 0.20
-        )
-        * max(
-            0,
+        let appear =
             min(
-                1,
-                (1.0 - p) / 0.04
+                1.0,
+                p / 0.20
             )
-        )
+
+        let disappear =
+            max(
+                0,
+                min(
+                    1,
+                    (1.0 - p) / 0.04
+                )
+            )
+
+        return appear * disappear
     }
+
+    // MARK: - Random Disconnect
 
     private func sectorOpacity(
         _ index: Int
@@ -323,15 +396,17 @@ private struct AppleLogoFill: View {
             return 0.0
         }
 
-        guard
-            let position =
-                disconnectOrder.firstIndex(of: index)
+        guard let position =
+                disconnectOrder.firstIndex(
+                    of: index
+                )
         else {
             return 1.0
         }
 
         let start =
-            Double(position) * sectorStartStep
+            Double(position)
+            * sectorStartStep
 
         let end =
             start + sectorDuration
@@ -348,35 +423,37 @@ private struct AppleLogoFill: View {
             (elapsed - start)
             / sectorDuration
 
-        // At t = 0.8 opacity is exactly 0.20.
-        // Therefore the next sector begins exactly
-        // when the previous sector is 80% gone.
-
         if t <= 0.8 {
 
-            let u = t / 0.8
+            let u =
+                t / 0.8
 
             let eased =
                 u * u * (3.0 - 2.0 * u)
 
-            return 1.0
-                + (0.20 - 1.0) * eased
+            return
+                1.0
+                + (
+                    0.20 - 1.0
+                ) * eased
 
         } else {
 
             let u =
-                (t - 0.8) / 0.2
+                (t - 0.8)
+                / 0.2
 
             let eased =
                 u * u * (3.0 - 2.0 * u)
 
-            return 0.20
+            return
+                0.20
                 * (1.0 - eased)
         }
     }
 }
 
-// MARK: - Liquid sector
+// MARK: - Liquid Wave
 
 private struct LiquidSector: Shape {
 
@@ -398,22 +475,37 @@ private struct LiquidSector: Shape {
                 )
             )
 
-        let y = rect.minY
-        let x0 = rect.minX
-        let x1 = rect.maxX
-        let mid = rect.midX
+        let y =
+            rect.minY
+
+        let x0 =
+            rect.minX
+
+        let x1 =
+            rect.maxX
+
+        let mid =
+            rect.midX
 
         path.move(
             to: CGPoint(
                 x: x0,
-                y: y + sin(phase) * a * 0.15
+                y:
+                    y
+                    + sin(phase)
+                    * a
+                    * 0.15
             )
         )
 
         path.addCurve(
             to: CGPoint(
                 x: mid,
-                y: y + sin(phase + 1.7) * a
+                y:
+                    y
+                    + sin(
+                        phase + 1.7
+                    ) * a
             ),
             control1: CGPoint(
                 x: width * 0.17,
@@ -428,7 +520,11 @@ private struct LiquidSector: Shape {
         path.addCurve(
             to: CGPoint(
                 x: x1,
-                y: y + sin(phase + 3.2) * a * 0.55
+                y:
+                    y
+                    + sin(
+                        phase + 3.2
+                    ) * a * 0.55
             ),
             control1: CGPoint(
                 x: width * 0.66,
@@ -460,7 +556,7 @@ private struct LiquidSector: Shape {
     }
 }
 
-// MARK: - Leaf bud / stem
+// MARK: - Leaf Bud / Stem
 
 private struct LeafBudStem: View {
 
@@ -470,15 +566,22 @@ private struct LeafBudStem: View {
 
         GeometryReader { geo in
 
-            let w = geo.size.width
-            let h = geo.size.height
+            let w =
+                geo.size.width
 
-            let x = w * 0.515
-            let baseY = h * 0.245
+            let h =
+                geo.size.height
+
+            let x =
+                w * 0.515
+
+            let baseY =
+                h * 0.245
 
             let topY =
                 baseY
-                - h * 0.045 * progress
+                - h * 0.045
+                * progress
 
             Path { path in
 
@@ -491,16 +594,26 @@ private struct LeafBudStem: View {
 
                 path.addCurve(
                     to: CGPoint(
-                        x: x + w * 0.025,
+                        x:
+                            x
+                            + w * 0.025,
                         y: topY
                     ),
                     control1: CGPoint(
-                        x: x - w * 0.01,
-                        y: baseY - h * 0.018
+                        x:
+                            x
+                            - w * 0.01,
+                        y:
+                            baseY
+                            - h * 0.018
                     ),
                     control2: CGPoint(
-                        x: x + w * 0.018,
-                        y: topY + h * 0.012
+                        x:
+                            x
+                            + w * 0.018,
+                        y:
+                            topY
+                            + h * 0.012
                     )
                 )
             }
@@ -511,10 +624,11 @@ private struct LeafBudStem: View {
                     blue: 0.12
                 ),
                 style: StrokeStyle(
-                    lineWidth: max(
-                        1.0,
-                        w * 0.018
-                    ),
+                    lineWidth:
+                        max(
+                            1.0,
+                            w * 0.018
+                        ),
                     lineCap: .round
                 )
             )
@@ -522,30 +636,31 @@ private struct LeafBudStem: View {
     }
 }
 
-// MARK: - 222 particle plant stream
+// MARK: - Exactly 222 Particles
 
 private struct PlantParticleField: View {
 
     let progress: Double
     let time: TimeInterval
     let active: Bool
-
     let logoWidth: CGFloat
     let logoHeight: CGFloat
 
-    // Exactly 222 particles:
-    // 82 leaves + 60 flowers + 80 pollen threads.
-    private let particles:
-        [PlantParticle] = PlantParticle.make222()
+    // EXACTLY 222:
+    // 82 leaves
+    // 60 flowers
+    // 80 pollen threads
+    private let particles: [PlantParticle] =
+        PlantParticle.make222()
 
     var body: some View {
 
         Canvas { context, size in
 
             guard
-                active
-                && progress > 0.0
-                && progress < 1.0
+                active,
+                progress > 0.0,
+                progress < 1.0
             else {
                 return
             }
@@ -604,8 +719,10 @@ private struct PlantParticleField: View {
 
                 let x =
                     startX
-                    + (targetX - startX)
-                    * eased
+                    + (
+                        targetX
+                        - startX
+                    ) * eased
                     + sin(
                         t * .pi * 4
                         + particle.seed
@@ -614,8 +731,10 @@ private struct PlantParticleField: View {
 
                 let y =
                     startY
-                    + (targetY - startY)
-                    * eased
+                    + (
+                        targetY
+                        - startY
+                    ) * eased
 
                 let absorb =
                     t > 0.88
@@ -675,29 +794,44 @@ private struct PlantParticleField: View {
             leaf.move(
                 to: CGPoint(
                     x: point.x,
-                    y: point.y + 5 * scale
+                    y: point.y
+                        + 5 * scale
                 )
             )
 
             leaf.addQuadCurve(
                 to: CGPoint(
-                    x: point.x + 8 * scale,
-                    y: point.y - 5 * scale
+                    x:
+                        point.x
+                        + 8 * scale,
+                    y:
+                        point.y
+                        - 5 * scale
                 ),
                 control: CGPoint(
-                    x: point.x + 2 * scale,
-                    y: point.y - 7 * scale
+                    x:
+                        point.x
+                        + 2 * scale,
+                    y:
+                        point.y
+                        - 7 * scale
                 )
             )
 
             leaf.addQuadCurve(
                 to: CGPoint(
                     x: point.x,
-                    y: point.y + 5 * scale
+                    y:
+                        point.y
+                        + 5 * scale
                 ),
                 control: CGPoint(
-                    x: point.x + 1 * scale,
-                    y: point.y + 1 * scale
+                    x:
+                        point.x
+                        + 1 * scale,
+                    y:
+                        point.y
+                        + 1 * scale
                 )
             )
 
@@ -714,7 +848,8 @@ private struct PlantParticleField: View {
 
         case .flower:
 
-            let r = 2.4 * scale
+            let r =
+                2.4 * scale
 
             var flower = Path()
 
@@ -728,10 +863,16 @@ private struct PlantParticleField: View {
 
                 let c =
                     CGPoint(
-                        x: point.x
-                            + cos(a) * r * 1.5,
-                        y: point.y
-                            + sin(a) * r * 1.5
+                        x:
+                            point.x
+                            + cos(a)
+                            * r
+                            * 1.5,
+                        y:
+                            point.y
+                            + sin(a)
+                            * r
+                            * 1.5
                     )
 
                 flower.addEllipse(
@@ -746,8 +887,12 @@ private struct PlantParticleField: View {
 
             flower.addEllipse(
                 in: CGRect(
-                    x: point.x - r * 0.75,
-                    y: point.y - r * 0.75,
+                    x:
+                        point.x
+                        - r * 0.75,
+                    y:
+                        point.y
+                        - r * 0.75,
                     width: r * 1.5,
                     height: r * 1.5
                 )
@@ -788,25 +933,35 @@ private struct PlantParticleField: View {
 
             thread.addCurve(
                 to: CGPoint(
-                    x: point.x
-                        + particle.threadDX * length,
-                    y: point.y - length
+                    x:
+                        point.x
+                        + particle.threadDX
+                        * length,
+                    y:
+                        point.y
+                        - length
                 ),
                 control1: CGPoint(
-                    x: point.x
+                    x:
+                        point.x
                         - particle.threadDX
                         * length
                         * 0.35,
-                    y: point.y
-                        - length * 0.35
+                    y:
+                        point.y
+                        - length
+                        * 0.35
                 ),
                 control2: CGPoint(
-                    x: point.x
+                    x:
+                        point.x
                         + particle.threadDX
                         * length
                         * 0.80,
-                    y: point.y
-                        - length * 0.68
+                    y:
+                        point.y
+                        - length
+                        * 0.68
                 )
             )
 
@@ -820,10 +975,11 @@ private struct PlantParticleField: View {
                     )
                 ),
                 style: StrokeStyle(
-                    lineWidth: max(
-                        0.45,
-                        0.75 * scale
-                    ),
+                    lineWidth:
+                        max(
+                            0.45,
+                            0.75 * scale
+                        ),
                     lineCap: .round
                 )
             )
@@ -831,7 +987,7 @@ private struct PlantParticleField: View {
     }
 }
 
-// MARK: - Particle model
+// MARK: - Particle Data
 
 private struct PlantParticle {
 
@@ -842,7 +998,6 @@ private struct PlantParticle {
     }
 
     let kind: Kind
-
     let phase: Double
     let startX: CGFloat
     let startY: CGFloat
@@ -854,14 +1009,14 @@ private struct PlantParticle {
     let threadDX: CGFloat
     let seed: Double
 
-    static func make222() -> [PlantParticle] {
+    static func make222()
+        -> [PlantParticle] {
 
         var result: [PlantParticle] = []
 
         result.reserveCapacity(222)
 
         // 82 leaves
-
         for i in 0..<82 {
 
             result.append(
@@ -909,7 +1064,6 @@ private struct PlantParticle {
         }
 
         // 60 flowers
-
         for i in 0..<60 {
 
             result.append(
@@ -952,13 +1106,13 @@ private struct PlantParticle {
                     length: 0,
                     threadDX: 0,
                     seed:
-                        Double(i) * 1.83 + 9
+                        Double(i) * 1.83
+                        + 9
                 )
             )
         }
 
         // 80 pollen threads
-
         for i in 0..<80 {
 
             result.append(
@@ -1009,7 +1163,8 @@ private struct PlantParticle {
                             * 0.10
                         ),
                     seed:
-                        Double(i) * 2.31 + 17
+                        Double(i) * 2.31
+                        + 17
                 )
             )
         }
@@ -1029,12 +1184,15 @@ private struct PlantParticle {
 
         let v =
             sin(
-                Double(x) * 12.9898
+                Double(x)
+                * 12.9898
             )
             * 43758.5453
 
         return CGFloat(
-            (v - floor(v)) * 2.0 - 1.0
+            (v - floor(v))
+            * 2.0
+            - 1.0
         )
     }
 }
