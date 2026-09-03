@@ -99,13 +99,16 @@ private struct AppleLogoArtwork: View {
     var body: some View {
         GeometryReader { geo in
             let p = min(1, max(0, progress))
+            // The stream must lead the logo. Keep the silhouette faint from the start,
+            // but delay the colored body until the energy has visibly risen.
+            let fillProgress = smoothStep((p - 0.56) / 0.44)
             let bodyTop = geo.size.height * 0.2443
             let bodyBottom = geo.size.height * 0.9999
             let bandHeight = (bodyBottom - bodyTop) / CGFloat(sectorCount)
-            let scaled = p * Double(sectorCount)
+            let scaled = fillProgress * Double(sectorCount)
             let completed = min(sectorCount, Int(scaled.rounded(.down)))
             let fraction = completed < sectorCount ? scaled - Double(completed) : 0
-            let leaf = leafProgress
+            let leaf = leafProgress(fillProgress: fillProgress)
 
             ZStack(alignment: .topLeading) {
                 ForEach(0..<sectorCount, id: \.self) { index in
@@ -165,11 +168,10 @@ private struct AppleLogoArtwork: View {
         }
     }
 
-    private var leafProgress: Double {
+    private func leafProgress(fillProgress: Double) -> Double {
         guard disconnectElapsed == nil else { return 0 }
-        // The leaf is completely absent until 88%, then grows for the final 12%.
-        let raw = (progress - 0.88) / 0.12
-        return smoothStep(raw)
+        // The leaf is strictly the final stage: it starts only after the body is complete.
+        return smoothStep((fillProgress - 0.94) / 0.06)
     }
 
     private func sectorOpacity(_ index: Int) -> Double {
@@ -259,14 +261,18 @@ private struct EnergyStream: View {
 
     // One thread is visible first; the rest are introduced gradually.
     private let threads: [StreamThread] = [
-        .init(birth: 0.00, offset: -0.08, amplitude: 0.95, frequency: 1.00, speed: 0.54, phase: 0.10, width: 1.45),
-        .init(birth: 0.08, offset:  0.10, amplitude: 0.88, frequency: 0.88, speed: 0.49, phase: 1.70, width: 1.30),
-        .init(birth: 0.17, offset: -0.19, amplitude: 0.82, frequency: 1.06, speed: 0.57, phase: 3.10, width: 1.20),
-        .init(birth: 0.27, offset:  0.22, amplitude: 0.76, frequency: 0.94, speed: 0.52, phase: 4.40, width: 1.15),
-        .init(birth: 0.38, offset: -0.27, amplitude: 0.70, frequency: 1.12, speed: 0.46, phase: 5.30, width: 1.10),
-        .init(birth: 0.49, offset:  0.29, amplitude: 0.64, frequency: 0.91, speed: 0.50, phase: 0.90, width: 1.05),
-        .init(birth: 0.61, offset: -0.12, amplitude: 0.58, frequency: 1.03, speed: 0.44, phase: 2.20, width: 1.00),
-        .init(birth: 0.73, offset:  0.08, amplitude: 0.52, frequency: 0.97, speed: 0.47, phase: 4.00, width: 0.95)
+        .init(birth: 0.00, offset: -0.10, amplitude: 1.00, frequency: 0.78, speed: 0.38, phase: 0.20, width: 1.65),
+        .init(birth: 0.07, offset:  0.08, amplitude: 0.96, frequency: 0.86, speed: 0.34, phase: 1.70, width: 1.55),
+        .init(birth: 0.14, offset: -0.22, amplitude: 0.92, frequency: 0.74, speed: 0.41, phase: 3.10, width: 1.45),
+        .init(birth: 0.21, offset:  0.20, amplitude: 0.88, frequency: 0.91, speed: 0.36, phase: 4.55, width: 1.40),
+        .init(birth: 0.29, offset: -0.31, amplitude: 0.82, frequency: 0.81, speed: 0.39, phase: 5.45, width: 1.35),
+        .init(birth: 0.36, offset:  0.29, amplitude: 0.78, frequency: 0.88, speed: 0.33, phase: 0.85, width: 1.30),
+        .init(birth: 0.43, offset: -0.14, amplitude: 0.74, frequency: 0.76, speed: 0.40, phase: 2.35, width: 1.28),
+        .init(birth: 0.50, offset:  0.13, amplitude: 0.70, frequency: 0.93, speed: 0.35, phase: 3.80, width: 1.24),
+        .init(birth: 0.57, offset: -0.27, amplitude: 0.66, frequency: 0.82, speed: 0.37, phase: 5.05, width: 1.20),
+        .init(birth: 0.64, offset:  0.25, amplitude: 0.62, frequency: 0.89, speed: 0.32, phase: 1.15, width: 1.16),
+        .init(birth: 0.71, offset: -0.08, amplitude: 0.58, frequency: 0.77, speed: 0.39, phase: 2.80, width: 1.12),
+        .init(birth: 0.78, offset:  0.06, amplitude: 0.54, frequency: 0.84, speed: 0.34, phase: 4.20, width: 1.08)
     ]
 
     var body: some View {
@@ -276,8 +282,8 @@ private struct EnergyStream: View {
             let streamTop = logoBottomY - 1.0
             let streamBottom = size.height + 4.0
             let travelDistance = max(1, streamBottom - streamTop)
-            let bundleHalf = min(12.5, max(7.5, size.width * 0.032))
-            let travel = easeOut(progress / 0.88)
+            let bundleHalf = min(16.0, max(10.0, size.width * 0.040))
+            let travel = smoothStep(progress / 0.92)
 
             for (index, thread) in threads.enumerated() {
                 guard progress >= thread.birth else { continue }
@@ -314,7 +320,7 @@ private struct EnergyStream: View {
         thread: StreamThread,
         index: Int
     ) {
-        let samples = 64
+        let samples = 88
         let visibleSamples = max(3, Int(Double(samples - 1) * visible) + 1)
         let centerX = size.width * 0.5
         var path = Path()
@@ -323,16 +329,17 @@ private struct EnergyStream: View {
         for sample in 0..<visibleSamples {
             let u = Double(sample) / Double(samples - 1)
             let y = bottom - distance * CGFloat(u)
-            let edgeTaper = 0.25 + 0.75 * sin(.pi * min(1, u))
+            let edgeTaper = 0.42 + 0.58 * sin(.pi * min(1, u))
 
-            let wave1 = sin(time * thread.speed + thread.phase + u * .pi * 2.0 * thread.frequency)
-            let wave2 = sin(time * thread.speed * 0.63 + thread.phase * 0.71 + u * .pi * 4.4 * thread.frequency + 1.2)
-            let organic = 0.72 * wave1 + 0.28 * wave2
+            let wave1 = sin(time * thread.speed + thread.phase + u * .pi * 2.15 * thread.frequency)
+            let wave2 = sin(time * thread.speed * 0.58 + thread.phase * 0.71 + u * .pi * 4.05 * thread.frequency + 1.2)
+            let wave3 = sin(time * thread.speed * 0.31 + thread.phase * 1.37 + u * .pi * 6.7 + 2.0)
+            let organic = 0.58 * wave1 + 0.27 * wave2 + 0.15 * wave3
 
             let staticX = thread.offset * bundleHalf
-            let bend = bundleHalf * 0.70 * thread.amplitude * CGFloat(organic) * CGFloat(edgeTaper)
-            let merge = smoothStep((u - 0.84) / 0.16)
-            let x = centerX + (staticX + bend) * CGFloat(1 - 0.82 * merge)
+            let bend = bundleHalf * 0.92 * thread.amplitude * CGFloat(organic) * CGFloat(edgeTaper)
+            let merge = smoothStep((u - 0.76) / 0.24)
+            let x = centerX + (staticX + bend) * CGFloat(1 - 0.88 * merge)
 
             let point = CGPoint(x: x, y: y)
             if let previous {
@@ -351,12 +358,12 @@ private struct EnergyStream: View {
         // Broad low-opacity halo + crisp living core.
         context.stroke(
             path,
-            with: .color(Color(red: 0.16, green: 0.88, blue: 0.24).opacity(0.16)),
-            style: StrokeStyle(lineWidth: width * 3.2, lineCap: .round, lineJoin: .round)
+            with: .color(Color(red: 0.16, green: 0.88, blue: 0.24).opacity(0.22)),
+            style: StrokeStyle(lineWidth: width * 3.6, lineCap: .round, lineJoin: .round)
         )
         context.stroke(
             path,
-            with: .color(Color(red: 0.38, green: 0.98, blue: 0.30).opacity(0.52 + 0.10 * shimmer)),
+            with: .color(Color(red: 0.38, green: 0.98, blue: 0.30).opacity(0.62 + 0.14 * shimmer)),
             style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round)
         )
     }
