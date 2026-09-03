@@ -7,208 +7,196 @@ struct ChargingLogoView: View {
 
     @State private var disconnectStart: Date?
     @State private var disconnectOrder: [Int] = []
-    @State private var chargeStartDate: Date?
+    @State private var chargeStart: Date?
 
     private let sectorCount = 6
-    private let sectorDuration: TimeInterval = 0.6
-    private let sectorStartStep: TimeInterval = 0.48
+    private let disconnectTotal: TimeInterval = 3.0
+    private let sectorFadeDuration: TimeInterval = 0.60
+    private let sectorFadeStep: TimeInterval = 0.48
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: false)) { context in
-            let now = context.date
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
+            let now = timeline.date
+            let elapsed = chargeStart.map { now.timeIntervalSince($0) } ?? 0
             let disconnectElapsed = disconnectStart.map { now.timeIntervalSince($0) }
-            let chargeElapsed = chargeStartDate.map { max(0, now.timeIntervalSince($0)) } ?? 0
 
             GeometryReader { geo in
                 let logoHeight: CGFloat = 181
-                let logoWidth = logoHeight * 814.0 / 1000.0
+                let logoWidth = logoHeight * 814 / 1000
                 let logoTop = max(42, geo.size.height * 0.075)
-                let visualLogoHeight = logoHeight * 0.60
 
                 ZStack(alignment: .top) {
-                    PlantParticleField(
-                        progress: progress,
-                        isCharging: isCharging,
-                        time: chargeElapsed,
-                        logoTop: logoTop,
-                        logoHeight: visualLogoHeight
+                    EnergyStream(
+                        progress: clampedProgress,
+                        time: elapsed,
+                        active: isCharging && disconnectElapsed == nil,
+                        logoBottomY: logoTop + logoHeight,
+                        logoWidth: logoWidth
                     )
-                    .frame(width: geo.size.width, height: geo.size.height)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                    AppleLogoFill(
-                        progress: progress,
-                        time: chargeElapsed,
+                    AppleLogoArtwork(
+                        progress: clampedProgress,
+                        time: elapsed,
                         disconnectElapsed: disconnectElapsed,
-                        disconnectOrder: disconnectOrder
+                        disconnectOrder: disconnectOrder,
+                        outlineProgress: outlineProgress
                     )
                     .frame(width: logoWidth, height: logoHeight)
-                    .scaleEffect(0.60, anchor: .top)
                     .padding(.top, logoTop)
                 }
-                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
             }
-            .onAppear { updateState(charging: isCharging, now: now) }
+            .onAppear { syncState(charging: isCharging, now: now) }
             .onChange(of: isCharging) { _, charging in
-                updateState(charging: charging, now: now)
+                syncState(charging: charging, now: now)
             }
         }
         .background(Color.black)
         .ignoresSafeArea()
     }
 
-    private func updateState(charging: Bool, now: Date) {
+    private var clampedProgress: Double {
+        min(1, max(0, progress))
+    }
+
+    private func syncState(charging: Bool, now: Date) {
         if charging {
             disconnectStart = nil
             disconnectOrder.removeAll(keepingCapacity: true)
-            if chargeStartDate == nil {
-                chargeStartDate = now
-            }
+            if chargeStart == nil { chargeStart = now }
         } else {
-            chargeStartDate = nil
+            chargeStart = nil
             if disconnectStart == nil {
-                disconnectStart = now
                 disconnectOrder = Array(0..<sectorCount).shuffled()
+                disconnectStart = now
             }
         }
     }
 }
 
-// MARK: - Apple Logo
+// MARK: - Logo
 
-private struct AppleLogoFill: View {
+private struct AppleLogoArtwork: View {
     let progress: Double
     let time: TimeInterval
     let disconnectElapsed: TimeInterval?
     let disconnectOrder: [Int]
+    let outlineProgress: Double
 
     private let sectorCount = 6
-    private let sectorDuration: TimeInterval = 0.6
-    private let sectorStartStep: TimeInterval = 0.48
-    private let sectorCompletionProgress = 0.88
+    private let fadeDuration: TimeInterval = 0.60
+    private let fadeStep: TimeInterval = 0.48
 
     private let colors: [SectorColor] = [
-        SectorColor(r: 0.05, g: 0.42, b: 0.95),
-        SectorColor(r: 0.39, g: 0.18, b: 0.78),
-        SectorColor(r: 0.82, g: 0.05, b: 0.35),
-        SectorColor(r: 0.98, g: 0.22, b: 0.10),
-        SectorColor(r: 1.00, g: 0.52, b: 0.05),
-        SectorColor(r: 0.42, g: 0.78, b: 0.12)
+        .init(r: 0.05, g: 0.42, b: 0.95),
+        .init(r: 0.39, g: 0.18, b: 0.78),
+        .init(r: 0.82, g: 0.05, b: 0.35),
+        .init(r: 0.98, g: 0.22, b: 0.10),
+        .init(r: 1.00, g: 0.52, b: 0.05),
+        .init(r: 0.42, g: 0.78, b: 0.12)
     ]
 
     var body: some View {
         GeometryReader { geo in
+            let p = min(1, max(0, progress))
             let bodyTop = geo.size.height * 0.2443
             let bodyBottom = geo.size.height * 0.9999
-            let bodyHeight = bodyBottom - bodyTop
-            let bandHeight = bodyHeight / CGFloat(sectorCount)
-            let p = progress.clamped01
-            let sectorProgress = min(1, p / sectorCompletionProgress)
-            let scaled = sectorProgress * Double(sectorCount)
-            let completed = min(sectorCount, Int(scaled))
-            let currentFraction = completed >= sectorCount ? 0 : scaled - Double(completed)
+            let bandHeight = (bodyBottom - bodyTop) / CGFloat(sectorCount)
+            let scaled = p * Double(sectorCount)
+            let completed = min(sectorCount, Int(scaled.rounded(.down)))
+            let fraction = completed < sectorCount ? scaled - Double(completed) : 0
             let leaf = leafProgress
-            let alive = p >= 1 && disconnectElapsed == nil
 
-            ZStack {
-                ZStack(alignment: .top) {
-                    ForEach(0..<sectorCount, id: \.self) { index in
-                        let visibility = sectorVisibility(
-                            index: index,
-                            completed: completed,
-                            currentFraction: currentFraction,
-                            disconnectElapsed: disconnectElapsed
-                        )
+            ZStack(alignment: .topLeading) {
+                ForEach(0..<sectorCount, id: \.self) { index in
+                    let amount = index < completed ? 1.0 :
+                        (index == completed ? fraction : 0)
+                    let opacity = sectorOpacity(index)
 
-                        if visibility > 0.001 {
-                            let pulse = heartbeat(time, phase: Double(index) * 0.035)
-                            let intensity = 0.94 + 0.10 * pulse
-
-                            Rectangle()
-                                .fill(sectorGradient(base: colors[index], index: index, time: time, intensity: intensity))
-                                .frame(width: geo.size.width, height: bandHeight + 1)
-                                .offset(y: bodyTop + CGFloat(index) * bandHeight)
-                                .opacity(visibility)
-                        }
+                    if amount > 0.0001 && opacity > 0.0001 {
+                        Rectangle()
+                            .fill(sectorGradient(colors[index], index: index, time: time))
+                            .frame(width: geo.size.width, height: bandHeight * CGFloat(amount) + 0.5)
+                            .position(
+                                x: geo.size.width / 2,
+                                y: bodyBottom - CGFloat(index) * bandHeight
+                                    - bandHeight * CGFloat(amount) / 2
+                            )
+                            .opacity(opacity)
                     }
                 }
-                .clipShape(AppleBodyShape())
-
-                if p > 0.72 && disconnectElapsed == nil {
-                    let contact = smoothStep((p - 0.72) / 0.28)
-                    let pulse = heartbeat(time, phase: 0)
-                    RadialGradient(
-                        colors: [
-                            Color(red: 0.52, green: 1.0, blue: 0.38)
-                                .opacity(0.20 * contact * (0.55 + 0.45 * pulse)),
-                            Color.clear
-                        ],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: geo.size.width * 0.055
-                    )
-                    .frame(width: geo.size.width * 0.16, height: geo.size.height * 0.075)
-                    .position(x: geo.size.width * 0.5, y: bodyBottom - 1)
-                    .blur(radius: 2.2)
-                    .clipShape(AppleBodyShape())
-                }
-
+            }
+            .mask(AppleBodyShape())
+            .overlay {
+                // Only the silhouette gets the soft 4–5 px glow.
                 AppleBodyShape()
-                    .stroke(Color.white.opacity(alive ? 0.27 : 0.20), lineWidth: 1.05)
-                    .blur(radius: 4.0)
-                    .opacity(alive ? 0.85 : 0.65)
+                    .stroke(
+                        Color(red: 0.02, green: 0.12, blue: 0.025)
+                            .opacity(0.78 * max(0.35, outlineProgress)),
+                        lineWidth: 1.05
+                    )
+                    .blur(radius: 2.2)
+
+                // Crisp dark-green contour under the glow.
+                AppleBodyShape()
+                    .stroke(
+                        Color(red: 0.015, green: 0.07, blue: 0.02)
+                            .opacity(0.92),
+                        lineWidth: 0.75
+                    )
 
                 if leaf > 0 {
                     AppleLeafShape()
-                        .fill(Color(red: 0.42, green: 0.78, blue: 0.12))
-                        .opacity(min(1, leaf * 1.15))
+                        .fill(Color(red: colors[5].r, green: colors[5].g, blue: colors[5].b))
+                        .opacity(leaf)
+                        .mask(LeafGrowthMask(progress: leaf))
                         .overlay {
                             AppleLeafShape()
-                                .fill(Color(red: 0.42, green: 0.78, blue: 0.12))
-                                .blur(radius: 4.0)
-                                .opacity(0.55 * leaf)
+                                .stroke(
+                                    Color(red: 0.02, green: 0.10, blue: 0.025)
+                                        .opacity(0.85 * leaf),
+                                    lineWidth: 0.7
+                                )
+                                .blur(radius: 2.0)
+                                .mask(LeafGrowthMask(progress: leaf))
                         }
-                        .clipShape(AppleLeafGrowthMask(progress: leaf))
                 }
             }
         }
     }
 
-    private func sectorVisibility(index: Int, completed: Int, currentFraction: Double, disconnectElapsed: TimeInterval?) -> Double {
-        guard let elapsed = disconnectElapsed else {
-            if index < completed { return 1 }
-            if index == completed && completed < sectorCount { return smoothStep(currentFraction) }
-            return 0
-        }
-
-        guard let position = disconnectOrder.firstIndex(of: index) else { return 1 }
-        let local = elapsed - Double(position) * sectorStartStep
-        if local <= 0 { return 1 }
-        if local >= sectorDuration { return 0 }
-        return 1 - smoothStep(local / sectorDuration)
-    }
-
     private var leafProgress: Double {
-        guard disconnectElapsed == nil, progress >= 0.88 else { return 0 }
-        return smoothStep((progress - 0.88) / 0.12)
+        guard disconnectElapsed == nil else { return 0 }
+        // The leaf is completely absent until 88%, then grows for the final 12%.
+        let raw = (progress - 0.88) / 0.12
+        return smoothStep(raw)
     }
 
-    private func sectorGradient(base: SectorColor, index: Int, time: TimeInterval, intensity: Double) -> LinearGradient {
-        let pulse = heartbeat(time, phase: Double(index) * 0.035)
-        let drift = 0.5 + 0.5 * sin(time * 0.72 + Double(index) * 0.85)
-        let dark = base.color(multipliedBy: 0.82 + 0.08 * pulse + 0.035 * drift)
-        let mid = base.color(multipliedBy: intensity + 0.045 * drift)
-        let bright = base.color(multipliedBy: 0.91 + 0.14 * pulse + 0.035 * drift)
+    private func sectorOpacity(_ index: Int) -> Double {
+        guard let elapsed = disconnectElapsed else { return 1 }
+        guard let position = disconnectOrder.firstIndex(of: index) else { return 1 }
+
+        let start = Double(position) * fadeStep
+        let t = (elapsed - start) / fadeDuration
+        if t <= 0 { return 1 }
+        if t >= 1 { return 0 }
+        return 1 - smoothStep(t)
+    }
+
+    private func sectorGradient(_ base: SectorColor, index: Int, time: TimeInterval) -> LinearGradient {
+        let beat = heartbeat(time, phase: Double(index) * 0.17)
+        let shimmer = 0.5 + 0.5 * sin(time * 0.24 + Double(index) * 0.83)
+        let light = 0.96 + 0.10 * beat + 0.035 * shimmer
 
         return LinearGradient(
             stops: [
-                .init(color: dark, location: 0),
-                .init(color: mid, location: 0.32),
-                .init(color: bright, location: 0.55),
-                .init(color: mid, location: 0.76),
-                .init(color: dark, location: 1)
+                .init(color: base.color(0.90 + 0.04 * shimmer), location: 0),
+                .init(color: base.color(light), location: 0.42),
+                .init(color: base.color(0.98 + 0.10 * beat), location: 0.58),
+                .init(color: base.color(0.91 + 0.04 * shimmer), location: 1)
             ],
-            startPoint: UnitPoint(x: 0.03 + 0.10 * pulse, y: 0),
-            endPoint: UnitPoint(x: 0.87 - 0.08 * pulse, y: 1)
+            startPoint: UnitPoint(x: 0.15, y: 0),
+            endPoint: UnitPoint(x: 0.85, y: 1)
         )
     }
 
@@ -220,218 +208,176 @@ private struct AppleLogoFill: View {
     }
 
     private func smoothStep(_ value: Double) -> Double {
-        let t = value.clamped01
+        let t = min(1, max(0, value))
         return t * t * (3 - 2 * t)
     }
 }
-
-// MARK: - Leaf Growth Mask
-
-private struct AppleLeafGrowthMask: Shape {
-    let progress: Double
-
-    func path(in rect: CGRect) -> Path {
-        let p = progress.clamped01
-        let revealBottom = rect.minY + rect.height * (1 - p)
-        var path = Path()
-        path.addRect(CGRect(x: rect.minX - 2, y: revealBottom, width: rect.width + 4, height: rect.maxY - revealBottom + 2))
-        return path
-    }
-}
-
-// MARK: - Sector Color
 
 private struct SectorColor {
     let r: Double
     let g: Double
     let b: Double
 
-    func color(multipliedBy factor: Double) -> Color {
-        Color(red: min(1, r * factor), green: min(1, g * factor), blue: min(1, b * factor))
+    func color(_ multiplier: Double) -> Color {
+        Color(
+            red: min(1, r * multiplier),
+            green: min(1, g * multiplier),
+            blue: min(1, b * multiplier)
+        )
     }
 }
 
-// MARK: - Energy Flow
-
-private struct PlantParticleField: View {
+private struct LeafGrowthMask: Shape {
     let progress: Double
-    let isCharging: Bool
-    let time: TimeInterval
-    let logoTop: CGFloat
-    let logoHeight: CGFloat
 
-    private let threadCount = 9
-    private let specs: [ThreadSpec] = [
-        ThreadSpec(birth: 0.00, offset: -0.05, amplitude: 0.95, frequency: 1.00, speed: 0.88, phase: 0.00),
-        ThreadSpec(birth: 0.09, offset:  0.18, amplitude: 0.72, frequency: 1.19, speed: 1.03, phase: 1.43),
-        ThreadSpec(birth: 0.18, offset: -0.22, amplitude: 0.86, frequency: 0.83, speed: 0.77, phase: 2.71),
-        ThreadSpec(birth: 0.28, offset:  0.34, amplitude: 0.62, frequency: 1.31, speed: 1.12, phase: 3.62),
-        ThreadSpec(birth: 0.38, offset: -0.37, amplitude: 0.78, frequency: 0.91, speed: 0.94, phase: 4.41),
-        ThreadSpec(birth: 0.48, offset:  0.27, amplitude: 0.66, frequency: 1.42, speed: 1.18, phase: 5.17),
-        ThreadSpec(birth: 0.58, offset: -0.30, amplitude: 0.71, frequency: 1.07, speed: 0.82, phase: 0.91),
-        ThreadSpec(birth: 0.68, offset:  0.14, amplitude: 0.58, frequency: 1.24, speed: 1.09, phase: 2.08),
-        ThreadSpec(birth: 0.76, offset: -0.12, amplitude: 0.54, frequency: 0.97, speed: 0.91, phase: 4.83)
+    func path(in rect: CGRect) -> Path {
+        let p = min(1, max(0, progress))
+        // Grow from the leaf base (~70% down its source geometry) toward the tip.
+        let baseY = rect.minY + rect.height * 0.70
+        let revealY = baseY - baseY * p
+        var path = Path()
+        path.addRect(
+            CGRect(
+                x: rect.minX - 2,
+                y: revealY,
+                width: rect.width + 4,
+                height: rect.maxY - revealY + 2
+            )
+        )
+        return path
+    }
+}
+
+// MARK: - Energy stream
+
+private struct EnergyStream: View {
+    let progress: Double
+    let time: TimeInterval
+    let active: Bool
+    let logoBottomY: CGFloat
+    let logoWidth: CGFloat
+
+    // One thread is visible first; the rest are introduced gradually.
+    private let threads: [StreamThread] = [
+        .init(birth: 0.00, offset: -0.08, amplitude: 0.95, frequency: 1.00, speed: 0.54, phase: 0.10, width: 1.45),
+        .init(birth: 0.08, offset:  0.10, amplitude: 0.88, frequency: 0.88, speed: 0.49, phase: 1.70, width: 1.30),
+        .init(birth: 0.17, offset: -0.19, amplitude: 0.82, frequency: 1.06, speed: 0.57, phase: 3.10, width: 1.20),
+        .init(birth: 0.27, offset:  0.22, amplitude: 0.76, frequency: 0.94, speed: 0.52, phase: 4.40, width: 1.15),
+        .init(birth: 0.38, offset: -0.27, amplitude: 0.70, frequency: 1.12, speed: 0.46, phase: 5.30, width: 1.10),
+        .init(birth: 0.49, offset:  0.29, amplitude: 0.64, frequency: 0.91, speed: 0.50, phase: 0.90, width: 1.05),
+        .init(birth: 0.61, offset: -0.12, amplitude: 0.58, frequency: 1.03, speed: 0.44, phase: 2.20, width: 1.00),
+        .init(birth: 0.73, offset:  0.08, amplitude: 0.52, frequency: 0.97, speed: 0.47, phase: 4.00, width: 0.95)
     ]
 
     var body: some View {
         Canvas { context, size in
-            guard isCharging, progress > 0 else { return }
-            drawEnergy(in: &context, size: size)
+            guard active, progress > 0, progress < 0.92 else { return }
+
+            let streamTop = logoBottomY - 1.0
+            let streamBottom = size.height + 4.0
+            let travelDistance = max(1, streamBottom - streamTop)
+            let bundleHalf = min(12.5, max(7.5, size.width * 0.032))
+            let travel = easeOut(progress / 0.88)
+
+            for (index, thread) in threads.enumerated() {
+                guard progress >= thread.birth else { continue }
+
+                let birthSpan = max(0.08, 0.88 - thread.birth)
+                let local = min(1, max(0, (progress - thread.birth) / birthSpan))
+                let visible = easeOut(local) * travel
+                guard visible > 0.003 else { continue }
+
+                drawThread(
+                    &context,
+                    size: size,
+                    top: streamTop,
+                    bottom: streamBottom,
+                    distance: travelDistance,
+                    bundleHalf: bundleHalf,
+                    visible: visible,
+                    thread: thread,
+                    index: index
+                )
+            }
         }
         .allowsHitTesting(false)
     }
 
-    private func drawEnergy(in context: inout GraphicsContext, size: CGSize) {
-        let p = progress.clamped01
-        let globalTravel = easeOut(min(1, p / 0.88))
-        let startY = size.height + 4
-        let targetY = logoTop + logoHeight - 1
-        let centerX = size.width * 0.5
-
-        // 5–9 mm visual envelope on a modern iPhone, with a hard cap.
-        let bundleWidth = min(32, max(22, size.width * 0.070))
-        let halfBundle = bundleWidth * 0.5
-
-        for index in 0..<min(threadCount, specs.count) {
-            let spec = specs[index]
-            guard p >= spec.birth else { continue }
-
-            let local = ((p - spec.birth) / max(0.0001, 0.88 - spec.birth)).clamped01
-            let travel = easeOut(local) * globalTravel
-            guard travel > 0.001 else { continue }
-
-            drawThread(
-                context: &context,
-                size: size,
-                centerX: centerX,
-                startY: startY,
-                targetY: targetY,
-                halfBundle: halfBundle,
-                travel: travel,
-                spec: spec,
-                time: time,
-                index: index
-            )
-        }
-
-        drawContactGlow(context: &context, centerX: centerX, targetY: targetY, width: bundleWidth, progress: p)
-    }
-
     private func drawThread(
-        context: inout GraphicsContext,
+        _ context: inout GraphicsContext,
         size: CGSize,
-        centerX: CGFloat,
-        startY: CGFloat,
-        targetY: CGFloat,
-        halfBundle: CGFloat,
-        travel: Double,
-        spec: ThreadSpec,
-        time: TimeInterval,
+        top: CGFloat,
+        bottom: CGFloat,
+        distance: CGFloat,
+        bundleHalf: CGFloat,
+        visible: Double,
+        thread: StreamThread,
         index: Int
     ) {
-        let distance = max(1, startY - targetY)
-        let steps = 56
-        let visibleSteps = max(2, Int(ceil(Double(steps - 1) * travel)) + 1)
+        let samples = 64
+        let visibleSamples = max(3, Int(Double(samples - 1) * visible) + 1)
+        let centerX = size.width * 0.5
+        var path = Path()
         var previous: CGPoint?
 
-        for step in 0..<visibleSteps {
-            let u = Double(step) / Double(steps - 1)
-            let y = startY - distance * CGFloat(u)
-            let envelope = sin(Double.pi * min(1, u))
-            let taper = 0.32 + 0.68 * envelope
+        for sample in 0..<visibleSamples {
+            let u = Double(sample) / Double(samples - 1)
+            let y = bottom - distance * CGFloat(u)
+            let edgeTaper = 0.25 + 0.75 * sin(.pi * min(1, u))
 
-            let drift = sin(time * spec.speed + spec.phase)
-            let wave1 = sin(spec.phase + time * spec.speed + u * Double.pi * 2.2 * spec.frequency)
-            let wave2 = sin(spec.phase * 0.61 + time * spec.speed * 0.63 + u * Double.pi * 5.1 * spec.frequency + 1.4)
-            let wave3 = sin(spec.phase * 1.37 + time * spec.speed * 0.39 + u * Double.pi * 8.3 + 2.1)
-            let organic = 0.54 * wave1 + 0.30 * wave2 + 0.16 * wave3
+            let wave1 = sin(time * thread.speed + thread.phase + u * .pi * 2.0 * thread.frequency)
+            let wave2 = sin(time * thread.speed * 0.63 + thread.phase * 0.71 + u * .pi * 4.4 * thread.frequency + 1.2)
+            let organic = 0.72 * wave1 + 0.28 * wave2
 
-            let maxOffset = halfBundle * 0.68
-            let staticOffset = spec.offset * maxOffset
-            let dynamicOffset = maxOffset * 0.78 * spec.amplitude * CGFloat(organic) * CGFloat(taper)
-
-            // The stream remains narrow but bends enough to read as a living stem.
-            let merge = smoothStep((u - 0.80) / 0.20)
-            let x = centerX + (staticOffset + dynamicOffset) * CGFloat(1 - 0.72 * merge)
+            let staticX = thread.offset * bundleHalf
+            let bend = bundleHalf * 0.70 * thread.amplitude * CGFloat(organic) * CGFloat(edgeTaper)
+            let merge = smoothStep((u - 0.84) / 0.16)
+            let x = centerX + (staticX + bend) * CGFloat(1 - 0.82 * merge)
 
             let point = CGPoint(x: x, y: y)
             if let previous {
-                let widthPulse = 0.78 + 0.18 * sin(time * 2.2 + spec.phase + Double(step) * 0.11)
-                let lineWidth = CGFloat(max(0.65, min(1.35, widthPulse)))
-                let headFade = 1 - smoothStep((u - 0.84) / 0.16)
-                let alpha = 0.34 + 0.66 * headFade
-                let opacity = 0.46 * alpha
-
-                var path = Path()
-                path.move(to: previous)
+                if sample == 1 { path.move(to: previous) }
                 path.addLine(to: point)
-
-                context.stroke(
-                    path,
-                    with: .color(Color(red: 0.42, green: 0.92, blue: 0.32).opacity(opacity * 0.15)),
-                    style: StrokeStyle(lineWidth: lineWidth * 3.0, lineCap: .round, lineJoin: .round)
-                )
-                context.stroke(
-                    path,
-                    with: .color(Color(red: 0.42, green: 0.92, blue: 0.32).opacity(opacity)),
-                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round)
-                )
+            } else {
+                path.move(to: point)
             }
             previous = point
         }
 
-        let headU = min(1, travel)
-        let headY = startY - distance * CGFloat(headU)
-        let headWave = sin(time * spec.speed * 1.4 + spec.phase)
-        let headX = centerX + spec.offset * halfBundle * 0.45 + CGFloat(headWave) * halfBundle * 0.18
-        let radius = 1.0 + 0.45 * heartbeat(time, phase: spec.phase)
+        let shimmer = 0.82 + 0.18 * sin(time * (1.2 + Double(index) * 0.04) + thread.phase)
+        let pulse = 0.82 + 0.18 * shimmer
+        let width = thread.width * pulse
 
-        context.fill(
-            Path(ellipseIn: CGRect(x: headX - radius, y: headY - radius, width: radius * 2, height: radius * 2)),
-            with: .color(Color(red: 0.55, green: 1.0, blue: 0.40).opacity(0.28))
+        // Broad low-opacity halo + crisp living core.
+        context.stroke(
+            path,
+            with: .color(Color(red: 0.16, green: 0.88, blue: 0.24).opacity(0.16)),
+            style: StrokeStyle(lineWidth: width * 3.2, lineCap: .round, lineJoin: .round)
         )
-    }
-
-    private func drawContactGlow(context: inout GraphicsContext, centerX: CGFloat, targetY: CGFloat, width: CGFloat, progress: Double) {
-        let strength = smoothStep((progress - 0.68) / 0.32)
-        guard strength > 0 else { return }
-        let pulse = heartbeat(time, phase: 0)
-        let radius = width * (0.34 + 0.10 * pulse)
-        let rect = CGRect(x: centerX - radius, y: targetY - radius * 0.55, width: radius * 2, height: radius * 1.1)
-
-        context.fill(
-            Path(ellipseIn: rect),
-            with: .color(Color(red: 0.55, green: 1.0, blue: 0.40).opacity(0.08 * strength * (0.7 + 0.3 * pulse)))
+        context.stroke(
+            path,
+            with: .color(Color(red: 0.38, green: 0.98, blue: 0.30).opacity(0.52 + 0.10 * shimmer)),
+            style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round)
         )
-    }
-
-    private func heartbeat(_ time: TimeInterval, phase: Double) -> Double {
-        let cycle = (time * 1.08 + phase).truncatingRemainder(dividingBy: 1)
-        let first = exp(-pow((cycle - 0.095) / 0.052, 2))
-        let second = exp(-pow((cycle - 0.225) / 0.075, 2))
-        return min(1, first * 0.95 + second * 0.52)
-    }
-
-    private func smoothStep(_ value: Double) -> Double {
-        let t = value.clamped01
-        return t * t * (3 - 2 * t)
     }
 
     private func easeOut(_ value: Double) -> Double {
-        let t = value.clamped01
-        return 1 - pow(1 - t, 3)
+        let t = min(1, max(0, value))
+        return 1 - pow(1 - t, 2.35)
+    }
+
+    private func smoothStep(_ value: Double) -> Double {
+        let t = min(1, max(0, value))
+        return t * t * (3 - 2 * t)
     }
 }
 
-private struct ThreadSpec {
+private struct StreamThread {
     let birth: Double
     let offset: Double
     let amplitude: Double
     let frequency: Double
     let speed: Double
     let phase: Double
-}
-
-private extension Double {
-    var clamped01: Double { min(1, max(0, self)) }
+    let width: Double
 }
