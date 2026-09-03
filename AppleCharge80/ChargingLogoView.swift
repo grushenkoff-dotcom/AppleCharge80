@@ -10,33 +10,30 @@ struct ChargingLogoView: View {
     @State private var chargeStartDate: Date?
 
     private let sectorCount = 6
-    private let sectorDuration: TimeInterval = 0.6
-    private let sectorStartStep: TimeInterval = 0.48
 
     var body: some View {
         TimelineView(
             .animation(
                 minimumInterval: 1.0 / 60.0,
-                paused: false
+                paused: !isCharging && disconnectStart == nil
             )
         ) { context in
+
             let now = context.date
 
-            let disconnectElapsed =
-                disconnectStart.map {
-                    now.timeIntervalSince($0)
-                }
+            let disconnectElapsed = disconnectStart.map {
+                now.timeIntervalSince($0)
+            }
 
-            let chargeElapsed =
-                chargeStartDate.map {
-                    max(0, now.timeIntervalSince($0))
-                } ?? 0
+            let chargeElapsed = chargeStartDate.map {
+                max(0, now.timeIntervalSince($0))
+            } ?? 0
 
             let logoHeight: CGFloat = 181
-            let logoWidth =
-                logoHeight * 814.0 / 1000.0
+            let logoWidth = logoHeight * 814.0 / 1000.0
 
             GeometryReader { geo in
+
                 ZStack(alignment: .top) {
 
                     PlantParticleField(
@@ -100,6 +97,7 @@ struct ChargingLogoView: View {
             disconnectOrder.removeAll()
             chargeStartDate = now
         } else {
+
             if disconnectStart == nil {
                 disconnectStart = now
             }
@@ -128,7 +126,7 @@ private struct AppleLogoFill: View {
 
     private let sectorCompletionProgress = 0.88
 
-    // Исходные цвета и исходный порядок сохранены.
+    // Исходные цвета и порядок сохранены.
     private let colors: [SectorColor] = [
         SectorColor(r: 0.05, g: 0.42, b: 0.95),
         SectorColor(r: 0.39, g: 0.18, b: 0.78),
@@ -139,6 +137,7 @@ private struct AppleLogoFill: View {
     ]
 
     var body: some View {
+
         GeometryReader { geo in
 
             let bodyTop =
@@ -151,7 +150,8 @@ private struct AppleLogoFill: View {
                 bodyBottom - bodyTop
 
             let bandHeight =
-                bodyHeight / CGFloat(sectorCount)
+                bodyHeight /
+                CGFloat(sectorCount)
 
             let normalizedProgress =
                 max(
@@ -159,13 +159,6 @@ private struct AppleLogoFill: View {
                     min(1, progress)
                 )
 
-            // =================================================
-            // СЕКТОРЫ ФОРМИРУЮТСЯ ОТ 0 ДО 88%
-            // =================================================
-            //
-            // Все шесть секторов полностью готовы к 88%.
-            // С 88% начинается исключительно рост листа.
-            //
             let sectorProgress =
                 min(
                     1,
@@ -186,7 +179,8 @@ private struct AppleLogoFill: View {
             let currentFraction =
                 completed >= sectorCount
                 ? 0
-                : scaled - Double(completed)
+                : scaled -
+                  Double(completed)
 
             let leafGrowth =
                 leafProgress
@@ -197,9 +191,7 @@ private struct AppleLogoFill: View {
 
             ZStack {
 
-                // =================================================
-                // COLOR LAYER
-                // =================================================
+                // MARK: Color Layer
 
                 ZStack(alignment: .top) {
 
@@ -258,19 +250,15 @@ private struct AppleLogoFill: View {
                     AppleBodyShape()
                 )
 
-                // =================================================
-                // CONTACT / MERGE GLOW
-                // =================================================
-                //
-                // Небольшая локальная зона слияния.
-                // Никакой зеленой полосы внутри Apple.
-                //
+                // MARK: Contact / Merge Glow
+
                 if normalizedProgress > 0.72 &&
                     disconnectElapsed == nil {
 
                     let contact =
                         smoothStep(
-                            (normalizedProgress - 0.72) / 0.28
+                            (normalizedProgress - 0.72) /
+                            0.28
                         )
 
                     let pulse =
@@ -291,6 +279,7 @@ private struct AppleLogoFill: View {
                                 contact *
                                 (0.55 + 0.45 * pulse)
                             ),
+
                             Color.clear
                         ],
                         center: .center,
@@ -316,36 +305,26 @@ private struct AppleLogoFill: View {
                     )
                 }
 
-                // =================================================
-                // EXTERNAL SOFT EDGE
-                // =================================================
-                //
-                // Только внешний мягкий край.
-                // Внутри логотип остается резким.
-                //
+                // MARK: External Soft Edge
+
                 AppleBodyShape()
                     .stroke(
                         Color.white.opacity(
-                            alive ? 0.27 : 0.20
+                            alive
+                            ? 0.27
+                            : 0.20
                         ),
                         lineWidth: 1.05
                     )
                     .blur(radius: 4.0)
                     .opacity(
-                        alive ? 0.85 : 0.65
+                        alive
+                        ? 0.85
+                        : 0.65
                     )
 
-                // =================================================
-                // LEAF
-                // =================================================
-                //
-                // ВАЖНО:
-                // никакого outline / trim / stroke.
-                // Лист полностью заполнен зеленым цветом.
-                //
-                // Рост:
-                // 88% -> 100%.
-                //
+                // MARK: Leaf
+
                 if leafGrowth > 0 {
 
                     AppleLeafShape()
@@ -362,10 +341,8 @@ private struct AppleLogoFill: View {
                                 leafGrowth * 1.15
                             )
                         )
-
-                        // Мягкий внешний ореол листа.
-                        // Само заполнение остается резким.
                         .overlay {
+
                             AppleLeafShape()
                                 .fill(
                                     Color(
@@ -390,7 +367,7 @@ private struct AppleLogoFill: View {
         }
     }
 
-    // MARK: - Sector Visibility
+    // MARK: Sector Visibility
 
     private func sectorVisibility(
         index: Int,
@@ -425,12 +402,10 @@ private struct AppleLogoFill: View {
             return 1
         }
 
-        let start =
+        let local =
+            elapsed -
             Double(position) *
             sectorStartStep
-
-        let local =
-            elapsed - start
 
         if local <= 0 {
             return 1
@@ -440,27 +415,26 @@ private struct AppleLogoFill: View {
             return 0
         }
 
-        let t =
-            local / sectorDuration
-
         return 1 -
-            smoothStep(t)
+            smoothStep(
+                local / sectorDuration
+            )
     }
 
-    // MARK: - Leaf Progress
+    // MARK: Leaf Progress
 
     private var leafProgress: Double {
 
-        guard disconnectElapsed == nil else {
-            return 0
-        }
-
-        guard progress >= 0.88 else {
+        guard
+            disconnectElapsed == nil,
+            progress >= 0.88
+        else {
             return 0
         }
 
         let t =
-            (progress - 0.88) / 0.12
+            (progress - 0.88) /
+            0.12
 
         return smoothStep(
             max(
@@ -470,7 +444,7 @@ private struct AppleLogoFill: View {
         )
     }
 
-    // MARK: - Smooth Step
+    // MARK: Smooth Step
 
     private func smoothStep(
         _ value: Double
@@ -487,7 +461,7 @@ private struct AppleLogoFill: View {
             (3 - 2 * t)
     }
 
-    // MARK: - Heartbeat
+    // MARK: Heartbeat
 
     private func heartbeat(
         _ time: TimeInterval,
@@ -523,7 +497,7 @@ private struct AppleLogoFill: View {
         )
     }
 
-    // MARK: - Sector Gradient
+    // MARK: Sector Gradient
 
     private func sectorGradient(
         base: SectorColor,
@@ -594,11 +568,15 @@ private struct AppleLogoFill: View {
                 )
             ],
             startPoint: UnitPoint(
-                x: 0.03 + 0.10 * pulse,
+                x:
+                    0.03 +
+                    0.10 * pulse,
                 y: 0
             ),
             endPoint: UnitPoint(
-                x: 0.87 - 0.08 * pulse,
+                x:
+                    0.87 -
+                    0.08 * pulse,
                 y: 1
             )
         )
@@ -621,19 +599,21 @@ private struct AppleLeafGrowthMask: Shape {
                 min(1, progress)
             )
 
-        var path = Path()
-
-        // Лист раскрывается снизу вверх.
-        // В финале маска полностью совпадает с областью Shape.
         let revealBottom =
             rect.minY +
-            rect.height * (1 - p)
+            rect.height *
+            (1 - p)
+
+        var path = Path()
 
         path.addRect(
             CGRect(
-                x: rect.minX - 2,
-                y: revealBottom,
-                width: rect.width + 4,
+                x:
+                    rect.minX - 2,
+                y:
+                    revealBottom,
+                width:
+                    rect.width + 4,
                 height:
                     rect.maxY -
                     revealBottom +
@@ -658,9 +638,21 @@ private struct SectorColor {
     ) -> Color {
 
         Color(
-            red: min(1, r * factor),
-            green: min(1, g * factor),
-            blue: min(1, b * factor)
+            red:
+                min(
+                    1,
+                    r * factor
+                ),
+            green:
+                min(
+                    1,
+                    g * factor
+                ),
+            blue:
+                min(
+                    1,
+                    b * factor
+                )
         )
     }
 }
@@ -674,9 +666,102 @@ private struct PlantParticleField: View {
     let time: TimeInterval
     let logoHeight: CGFloat
 
+    // MARK: Thread Configuration
+
+    private struct ThreadSpec {
+
+        let phase: Double
+        let speed: Double
+        let frequency: Double
+        let amplitude: Double
+        let offset: Double
+        let birth: Double
+    }
+
+    /*
+     Fixed deterministic configuration.
+
+     Никаких случайных вычислений каждый кадр.
+     Каждая нить имеет собственную жизнь:
+     phase / speed / frequency / amplitude / birth.
+     */
+
+    private static let threads: [ThreadSpec] = [
+
+        ThreadSpec(
+            phase: 0.20,
+            speed: 0.82,
+            frequency: 1.00,
+            amplitude: 0.70,
+            offset: -0.05,
+            birth: 0.00
+        ),
+
+        ThreadSpec(
+            phase: 2.10,
+            speed: 0.97,
+            frequency: 1.18,
+            amplitude: 0.82,
+            offset: 0.18,
+            birth: 0.15
+        ),
+
+        ThreadSpec(
+            phase: 4.35,
+            speed: 0.74,
+            frequency: 0.92,
+            amplitude: 0.76,
+            offset: -0.22,
+            birth: 0.29
+        ),
+
+        ThreadSpec(
+            phase: 1.25,
+            speed: 1.08,
+            frequency: 1.30,
+            amplitude: 0.66,
+            offset: 0.31,
+            birth: 0.43
+        ),
+
+        ThreadSpec(
+            phase: 3.55,
+            speed: 0.88,
+            frequency: 1.08,
+            amplitude: 0.88,
+            offset: -0.34,
+            birth: 0.57
+        ),
+
+        ThreadSpec(
+            phase: 5.15,
+            speed: 1.02,
+            frequency: 1.22,
+            amplitude: 0.72,
+            offset: 0.09,
+            birth: 0.70
+        ),
+
+        ThreadSpec(
+            phase: 0.95,
+            speed: 0.79,
+            frequency: 1.38,
+            amplitude: 0.60,
+            offset: -0.12,
+            birth: 0.80
+        )
+    ]
+
     var body: some View {
 
         Canvas { context, canvasSize in
+
+            guard
+                isCharging,
+                progress > 0
+            else {
+                return
+            }
 
             drawFlow(
                 context: &context,
@@ -691,20 +776,12 @@ private struct PlantParticleField: View {
         .allowsHitTesting(false)
     }
 
-    // MARK: - Growing Multi Thread Flow
+    // MARK: Growing Flow
 
     private func drawFlow(
         context: inout GraphicsContext,
         canvasSize: CGSize
     ) {
-
-        guard isCharging else {
-            return
-        }
-
-        guard progress > 0 else {
-            return
-        }
 
         let logoTopY =
             max(
@@ -712,18 +789,21 @@ private struct PlantParticleField: View {
                 canvasSize.height * 0.075
             )
 
-        let logoBottomY =
+        let targetY =
             logoTopY +
-            logoHeight
+            logoHeight +
+            1
 
-        // =====================================================
-        // FLOW GROWTH
-        // =====================================================
-        //
-        // Поток идет от самого нижнего края.
-        // В начале существует только одна нить.
-        // Затем число нитей постепенно увеличивается.
-        //
+        let startY =
+            canvasSize.height +
+            2
+
+        let centerX =
+            canvasSize.width *
+            0.5
+
+        // 0...1 corresponds to the actual
+        // growth phase before the leaf.
         let growth =
             smoothStep(
                 min(
@@ -732,20 +812,13 @@ private struct PlantParticleField: View {
                 )
             )
 
-        let startY =
-            canvasSize.height + 2
-
-        let targetY =
-            logoBottomY + 1
-
         let travel =
-            min(
-                1,
-                progress * 1.12
+            easeOut(
+                min(
+                    1,
+                    progress * 1.12
+                )
             )
-
-        let easedTravel =
-            easeOut(travel)
 
         let headY =
             startY -
@@ -753,144 +826,60 @@ private struct PlantParticleField: View {
                 startY -
                 targetY
             ) *
-            CGFloat(easedTravel)
+            CGFloat(travel)
 
-        let centerX =
-            canvasSize.width * 0.5
+        /*
+         Approx. 5–9 mm visual width.
 
-        // =====================================================
-        // ОБЩАЯ ШИРИНА ПУЧКА
-        // =====================================================
-        //
-        // Приблизительно 5–9 мм визуальной ширины
-        // на современном iPhone.
-        //
+         The important difference from the old version:
+         this is the width of the whole living bundle,
+         not an artificial set of long parallel lines.
+         */
+
         let bundleWidth =
             min(
-                17.0,
+                16.0,
                 max(
                     10.0,
-                    canvasSize.width * 0.026
+                    canvasSize.width * 0.024
                 )
             )
 
-        let halfBundle =
-            bundleWidth * 0.5
+        for spec in Self.threads {
 
-        // =====================================================
-        // ЧИСЛО НИТЕЙ
-        // =====================================================
+            guard
+                growth >= spec.birth
+            else {
+                continue
+            }
 
-        let maximumThreads = 11
+            /*
+             New threads do not appear instantly.
+             They fade into existence over part of the growth.
+             */
 
-        let visibleThreads =
-            max(
-                1,
-                min(
-                    maximumThreads,
-                    Int(
-                        floor(
-                            1 +
-                            growth *
-                            Double(maximumThreads - 1)
-                        )
-                    )
-                )
-            )
-
-        for index in 0..<visibleThreads {
-
-            let seed =
-                Double(index) * 13.731 + 4.17
-
-            let phase =
-                seed.truncatingRemainder(
-                    dividingBy: 6.283185307
-                )
-
-            let speed =
-                0.78 +
-                (
-                    seed
-                        .truncatingRemainder(
-                            dividingBy: 1.0
-                        )
-                ) *
-                0.42
-
-            let frequency =
-                1.55 +
-                (
-                    seed * 0.37
-                )
-                .truncatingRemainder(
-                    dividingBy: 1.0
-                ) *
-                1.25
-
-            let amplitudeFactor =
-                0.55 +
-                (
-                    seed * 0.19
-                )
-                .truncatingRemainder(
-                    dividingBy: 1.0
-                ) *
-                0.55
-
-            let phaseMotion =
-                time *
-                speed
-
-            let normalizedIndex =
-                visibleThreads == 1
-                ? 0.5
-                : Double(index) /
-                    Double(visibleThreads - 1)
-
-            // Нити распределяются по пучку,
-            // но не образуют одинаковые параллельные линии.
-            let staticOffset =
-                (
-                    normalizedIndex - 0.5
-                ) *
-                bundleWidth *
-                0.72
-
-            let threadOpacity =
+            let birthFade =
                 smoothStep(
                     min(
                         1,
-                        growth *
-                        (
-                            1.15 -
-                            Double(index) *
-                            0.035
-                        )
+                        (growth - spec.birth) /
+                        0.12
                     )
                 )
 
             drawThread(
                 context: &context,
-                canvasSize: canvasSize,
                 centerX: centerX,
                 startY: startY,
                 headY: headY,
-                targetY: targetY,
-                halfBundle: halfBundle,
-                staticOffset: staticOffset,
-                phase: phase,
-                phaseMotion: phaseMotion,
-                frequency: frequency,
-                amplitudeFactor: amplitudeFactor,
-                opacity: threadOpacity,
-                index: index
+                bundleWidth: bundleWidth,
+                spec: spec,
+                time: time,
+                opacity: birthFade
             )
         }
 
-        // =====================================================
-        // МЯГКОЕ СЛИЯНИЕ В НИЖНЕЙ ТОЧКЕ
-        // =====================================================
+        // MARK: Merge Point
 
         let mergeStrength =
             smoothStep(
@@ -900,36 +889,36 @@ private struct PlantParticleField: View {
                 )
             )
 
-        let mergePulse =
+        let pulse =
             heartbeat(
                 time,
                 phase: 0
             )
 
-        let mergeRadius =
+        let radius =
             bundleWidth *
             (
-                0.95 +
-                0.30 * mergePulse
+                0.62 +
+                0.10 * pulse
             )
 
-        let mergeRect =
+        let rect =
             CGRect(
                 x:
                     centerX -
-                    mergeRadius,
+                    radius,
                 y:
                     targetY -
-                    mergeRadius * 0.72,
+                    radius * 0.52,
                 width:
-                    mergeRadius * 2,
+                    radius * 2,
                 height:
-                    mergeRadius * 1.44
+                    radius * 1.04
             )
 
         context.fill(
             Path(
-                ellipseIn: mergeRect
+                ellipseIn: rect
             ),
             with: .color(
                 Color(
@@ -938,43 +927,53 @@ private struct PlantParticleField: View {
                     blue: 0.40
                 )
                 .opacity(
-                    0.10 *
-                    mergeStrength *
-                    (0.70 + 0.30 * mergePulse)
+                    0.055 *
+                    mergeStrength
                 )
             )
         )
     }
 
-    // MARK: - Individual Living Thread
+    // MARK: Individual Living Thread
 
     private func drawThread(
         context: inout GraphicsContext,
-        canvasSize: CGSize,
         centerX: CGFloat,
         startY: CGFloat,
         headY: CGFloat,
-        targetY: CGFloat,
-        halfBundle: CGFloat,
-        staticOffset: CGFloat,
-        phase: Double,
-        phaseMotion: Double,
-        frequency: Double,
-        amplitudeFactor: Double,
-        opacity: Double,
-        index: Int
+        bundleWidth: CGFloat,
+        spec: ThreadSpec,
+        time: TimeInterval,
+        opacity: Double
     ) {
 
-        let totalDistance =
+        let distance =
             max(
                 1,
                 startY - headY
             )
 
-        let steps = 42
+        /*
+         Fewer samples than the old 42-point version,
+         while still being smooth at this scale.
+         */
+
+        let steps = 30
 
         var previousPoint:
             CGPoint?
+
+        let maxOffset =
+            bundleWidth *
+            0.34
+
+        let staticOffset =
+            CGFloat(spec.offset) *
+            maxOffset
+
+        let phaseTime =
+            time *
+            spec.speed
 
         for step in 0..<steps {
 
@@ -984,92 +983,112 @@ private struct PlantParticleField: View {
 
             let y =
                 startY -
-                totalDistance *
+                distance *
                 CGFloat(u)
 
-            // Амплитуда меньше у нижнего начала
-            // и мягко меняется по высоте.
+            /*
+             Narrow at the beginning and near the
+             Apple contact point, widest in the middle.
+             */
+
             let envelope =
                 sin(
-                    Double(u) *
-                    .pi
+                    u * .pi
                 )
 
-            let localAmplitude =
-                halfBundle *
-                0.62 *
-                amplitudeFactor *
+            let amplitude =
+                bundleWidth *
+                0.26 *
+                spec.amplitude *
                 CGFloat(
-                    0.28 +
-                    0.72 * envelope
+                    0.35 +
+                    0.65 * envelope
                 )
 
-            let wave1 =
+            /*
+             Two harmonics instead of three.
+
+             They have different frequencies and phases,
+             so the result does not look like a rigid
+             repeating sinusoid.
+             */
+
+            let wave =
+                0.68 *
                 sin(
-                    phase +
-                    phaseMotion +
-                    Double(u) *
-                    frequency *
-                    6.0
+                    spec.phase +
+                    phaseTime +
+                    u *
+                    .pi *
+                    2.0 *
+                    spec.frequency
                 )
-
-            let wave2 =
+                +
+                0.32 *
                 sin(
-                    phase * 0.61 +
-                    phaseMotion * 0.72 +
-                    Double(u) *
-                    frequency *
-                    11.0 +
-                    1.7
+                    spec.phase *
+                    0.61 +
+                    phaseTime *
+                    0.67 +
+                    u *
+                    .pi *
+                    4.7 *
+                    spec.frequency +
+                    1.4
                 )
 
-            let wave3 =
-                sin(
-                    phase * 1.37 +
-                    phaseMotion * 0.43 +
-                    Double(u) *
-                    17.0
+            /*
+             Very slow common movement.
+             This makes the whole stream breathe as one
+             living structure without synchronizing
+             individual threads.
+             */
+
+            let bundleDrift =
+                CGFloat(
+                    sin(
+                        time * 0.34 +
+                        u * 2.1
+                    )
+                    *
+                    Double(bundleWidth)
+                    *
+                    0.045
                 )
 
-            let organicWave =
-                0.58 * wave1 +
-                0.27 * wave2 +
-                0.15 * wave3
+            /*
+             Final part of every thread gently converges
+             into the Apple contact point.
+             */
 
-            var x =
-                centerX +
-                staticOffset +
-                localAmplitude *
-                CGFloat(organicWave)
-
-            // Все нити мягко собираются в одну
-            // локальную зону перед входом в Apple.
-            let mergeFactor =
+            let merge =
                 smoothStep(
                     max(
                         0,
                         min(
                             1,
-                            (u - 0.78) / 0.22
+                            (u - 0.76) /
+                            0.24
                         )
                     )
                 )
 
-            let mergeOffset =
+            let x =
+                centerX +
                 staticOffset *
                 CGFloat(
                     1 -
-                    mergeFactor * 0.88
+                    0.82 * merge
                 )
-
-            x =
-                centerX +
-                mergeOffset +
-                localAmplitude *
+                +
+                amplitude *
+                CGFloat(wave) *
                 CGFloat(
-                    organicWave *
-                    (1 - mergeFactor * 0.78)
+                    1 -
+                    0.72 * merge
                 )
+                +
+                bundleDrift
 
             let point =
                 CGPoint(
@@ -1079,38 +1098,45 @@ private struct PlantParticleField: View {
 
             if let previousPoint {
 
-                let segmentProgress =
-                    u
+                /*
+                 Small independent width breathing.
+                 It changes the apparent thread width
+                 without making the whole stream thicker.
+                 */
 
-                // Небольшое дыхание ширины.
-                let widthWave =
+                let widthPulse =
+                    0.86 +
+                    0.16 *
                     sin(
-                        time * 2.0 +
-                        phase +
-                        Double(step) * 0.43
+                        time * 1.7 +
+                        spec.phase +
+                        u * 4.0
                     )
 
                 let lineWidth =
                     max(
-                        0.55,
+                        0.65,
                         min(
                             1.15,
-                            0.70 +
-                            0.20 * widthWave
+                            0.82 *
+                            widthPulse
                         )
                     )
 
-                // Нить становится мягче непосредственно
-                // перед слиянием.
-                let fadeAtHead =
+                /*
+                 Fade slightly near the Apple contact.
+                 No bright dot / head is added.
+                 */
+
+                let headFade =
                     1 -
                     smoothStep(
                         max(
                             0,
                             min(
                                 1,
-                                (segmentProgress - 0.80) /
-                                0.20
+                                (u - 0.84) /
+                                0.16
                             )
                         )
                     )
@@ -1118,8 +1144,8 @@ private struct PlantParticleField: View {
                 let segmentOpacity =
                     opacity *
                     (
-                        0.38 +
-                        0.62 * fadeAtHead
+                        0.48 +
+                        0.52 * headFade
                     )
 
                 var segment =
@@ -1133,7 +1159,8 @@ private struct PlantParticleField: View {
                     to: point
                 )
 
-                // Мягкий внешний свет.
+                // Very subtle external light.
+
                 context.stroke(
                     segment,
                     with: .color(
@@ -1143,18 +1170,21 @@ private struct PlantParticleField: View {
                             blue: 0.32
                         )
                         .opacity(
-                            segmentOpacity * 0.16
+                            segmentOpacity *
+                            0.13
                         )
                     ),
                     style: StrokeStyle(
                         lineWidth:
-                            lineWidth * 3.0,
+                            lineWidth *
+                            2.5,
                         lineCap: .round,
                         lineJoin: .round
                     )
                 )
 
-                // Основная живая нить.
+                // Sharp living core.
+
                 context.stroke(
                     segment,
                     with: .color(
@@ -1164,7 +1194,8 @@ private struct PlantParticleField: View {
                             blue: 0.32
                         )
                         .opacity(
-                            segmentOpacity * 0.54
+                            segmentOpacity *
+                            0.62
                         )
                     ),
                     style: StrokeStyle(
@@ -1176,70 +1207,22 @@ private struct PlantParticleField: View {
                 )
             }
 
-            previousPoint = point
+            previousPoint =
+                point
         }
-
-        // Небольшой светящийся кончик каждой нити.
-        let headPhase =
-            heartbeat(
-                time,
-                phase: phase
-            )
-
-        let headRadius =
-            1.0 +
-            0.55 * headPhase
-
-        let headX =
-            centerX +
-            staticOffset *
-            0.12
-
-        let tipRect =
-            CGRect(
-                x:
-                    headX -
-                    headRadius,
-                y:
-                    headY -
-                    headRadius,
-                width:
-                    headRadius * 2,
-                height:
-                    headRadius * 2
-            )
-
-        context.fill(
-            Path(
-                ellipseIn: tipRect
-            ),
-            with: .color(
-                Color(
-                    red: 0.55,
-                    green: 1.0,
-                    blue: 0.40
-                )
-                .opacity(
-                    opacity *
-                    0.25 *
-                    (0.70 + 0.30 * headPhase)
-                )
-            )
-        )
     }
 
-    // MARK: - Pollen
+    // MARK: Pollen
 
     private func drawPollen(
         context: inout GraphicsContext,
         canvasSize: CGSize
     ) {
 
-        guard isCharging else {
-            return
-        }
-
-        guard progress > 0.04 else {
+        guard
+            isCharging,
+            progress > 0.10
+        else {
             return
         }
 
@@ -1249,26 +1232,24 @@ private struct PlantParticleField: View {
                 canvasSize.height * 0.075
             )
 
-        let logoBottomY =
+        let targetY =
             logoTopY +
-            logoHeight
+            logoHeight +
+            1
 
         let startY =
-            canvasSize.height + 2
-
-        let targetY =
-            logoBottomY + 1
-
-        let flowProgress =
-            min(
-                1,
-                progress * 1.12
-            )
+            canvasSize.height +
+            2
 
         let travel =
-            easeOut(flowProgress)
+            easeOut(
+                min(
+                    1,
+                    progress * 1.12
+                )
+            )
 
-        let currentHeadY =
+        let headY =
             startY -
             (
                 startY -
@@ -1277,111 +1258,108 @@ private struct PlantParticleField: View {
             CGFloat(travel)
 
         let centerX =
-            canvasSize.width * 0.5
+            canvasSize.width *
+            0.5
 
         let bundleWidth =
             min(
-                17.0,
+                16.0,
                 max(
                     10.0,
-                    canvasSize.width * 0.026
+                    canvasSize.width * 0.024
                 )
             )
 
-        // Частиц меньше, чем раньше,
-        // и они находятся около живого потока.
-        let count = 24
+        /*
+         Only 10 particles.
+
+         They are supplementary to the stream,
+         not a second particle stream.
+         */
+
+        let count = 10
 
         for index in 0..<count {
 
             let seed =
-                Double(index) * 19.173 + 2.81
+                Double(index) *
+                1.731 +
+                0.37
 
             let phase =
-                seed.truncatingRemainder(
-                    dividingBy: 6.283185307
-                )
-
-            let speed =
-                0.22 +
-                (
-                    seed * 0.17
-                )
-                .truncatingRemainder(
-                    dividingBy: 0.18
-                )
+                seed *
+                4.7
 
             let cycle =
                 (
-                    time * speed +
+                    time *
+                    (
+                        0.18 +
+                        seed.truncatingRemainder(
+                            dividingBy: 0.12
+                        )
+                    )
+                    +
                     phase
                 )
                 .truncatingRemainder(
                     dividingBy: 1
                 )
 
-            // Частицы движутся снизу вверх.
             let vertical =
-                CGFloat(
-                    cycle
-                )
+                CGFloat(cycle)
 
             let y =
                 startY -
                 (
                     startY -
-                    currentHeadY
+                    headY
                 ) *
                 vertical
 
             let spread =
                 CGFloat(
-                    0.28 +
-                    0.72 *
+                    0.20 +
+                    0.80 *
                     sin(
                         vertical * .pi
                     )
                 )
 
             let side =
-                (
-                    seed * 0.73
+                CGFloat(
+                    sin(
+                        seed * 9.17
+                    )
                 )
-                .truncatingRemainder(
-                    dividingBy: 1
-                ) -
-                0.5
 
-            let wave =
-                sin(
-                    time * 1.2 +
-                    phase +
-                    Double(vertical) * 8.0
+            let drift =
+                CGFloat(
+                    sin(
+                        time * 0.55 +
+                        phase +
+                        Double(vertical) * 5.0
+                    )
                 )
 
             let x =
                 centerX +
-                (
-                    CGFloat(side) *
-                    bundleWidth *
-                    0.85 *
-                    spread
-                ) +
-                (
-                    CGFloat(wave) *
-                    bundleWidth *
-                    0.28
-                )
+                side *
+                bundleWidth *
+                0.38 *
+                spread
+                +
+                drift *
+                bundleWidth *
+                0.08
 
             let radius =
                 0.45 +
-                (
-                    seed
-                        .truncatingRemainder(
-                            dividingBy: 1
-                        )
-                ) *
-                0.75
+                CGFloat(
+                    seed.truncatingRemainder(
+                        dividingBy: 0.45
+                    )
+                )
 
             let pulse =
                 heartbeat(
@@ -1390,8 +1368,8 @@ private struct PlantParticleField: View {
                 )
 
             let opacity =
-                0.055 +
-                0.10 * pulse
+                0.035 +
+                0.07 * pulse
 
             let rect =
                 CGRect(
@@ -1425,7 +1403,7 @@ private struct PlantParticleField: View {
         }
     }
 
-    // MARK: - Ease Out
+    // MARK: Ease Out
 
     private func easeOut(
         _ value: Double
@@ -1437,14 +1415,15 @@ private struct PlantParticleField: View {
                 min(1, value)
             )
 
-        return 1 -
+        return
+            1 -
             pow(
                 1 - t,
                 3
             )
     }
 
-    // MARK: - Smooth Step
+    // MARK: Smooth Step
 
     private func smoothStep(
         _ value: Double
@@ -1461,7 +1440,7 @@ private struct PlantParticleField: View {
             (3 - 2 * t)
     }
 
-    // MARK: - Heartbeat
+    // MARK: Heartbeat
 
     private func heartbeat(
         _ time: TimeInterval,
